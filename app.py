@@ -162,13 +162,17 @@ def leads():
         page = max(1, min(100000, int(request.args.get("page", "1"))))
     except ValueError:
         page = 1
+    try:
+        limit = max(1, min(30, int(request.args.get("limit", "30"))))
+    except ValueError:
+        limit = 30
     with connect() as db:
         count = db.execute(f"SELECT COUNT(*) FROM leads l WHERE {where}", params).fetchone()[0]
         rows = db.execute(f"""SELECT l.*, COALESCE(s.name,'Добавлено вручную') AS source_name
             FROM leads l LEFT JOIN sources s ON s.id=l.source_id
             WHERE {where} ORDER BY CASE WHEN l.stage='new' THEN 0 ELSE 1 END, l.score DESC, l.created_at DESC
-            LIMIT 30 OFFSET ?""", params + [(page - 1) * 30]).fetchall()
-    return jsonify(items=[dict(r) for r in rows], count=count, page=page, pages=max(1, (count + 29)//30))
+            LIMIT ? OFFSET ?""", params + [limit, (page - 1) * limit]).fetchall()
+    return jsonify(items=[dict(r) for r in rows], count=count, page=page, pages=max(1, (count + limit - 1)//limit))
 
 @app.route("/api/leads/<int:lead_id>", methods=["PATCH", "DELETE"])
 @admin_only
