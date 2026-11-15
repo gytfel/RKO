@@ -78,6 +78,28 @@ PY
       *) echo 'Команды: rko-radar web setup | status | disable' ;;
     esac
     ;;
+  deepseek)
+    case "${2:-status}" in
+      setup)
+        python3 "$APP_DIR/deepseek_setup.py"
+        systemctl restart "$SERVICE"
+        echo '✓ DeepSeek подключён; новые результаты будут анализироваться ИИ.'
+        ;;
+      status)
+        if [[ -s /etc/rko-radar-deepseek.env ]]; then
+          echo 'DeepSeek API-ключ настроен (не показывается).'
+        else
+          echo 'DeepSeek не подключён. Запусти: sudo rko-radar deepseek setup'
+        fi
+        ;;
+      disable)
+        rm -f /etc/rko-radar-deepseek.env
+        systemctl restart "$SERVICE"
+        echo '✓ DeepSeek отключён, сохранённые результаты не удалены.'
+        ;;
+      *) echo 'Команды: rko-radar deepseek setup | status | disable' ;;
+    esac
+    ;;
   upgrade)
     updater="$APP_DIR/../rko-radar-source/scripts/update-vps.sh"
     # Fetch latest updater before pulling app code (first run included).
@@ -119,6 +141,7 @@ RKO Radar — команды управления на VPS:
   rko-radar telegram status  — проверить Telegram
   rko-radar telegram disable — отключить уведомления
   rko-radar web setup / status / disable — интернет-поиск через Tavily
+  rko-radar deepseek setup / status / disable — поиск и анализ DeepSeek
   rko-radar upgrade   — обновить с GitHub (без загрузки файлов вручную)
   rko-radar update /путь/к/файлу.sh — установить обновление
 TXT
