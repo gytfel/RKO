@@ -223,7 +223,7 @@ def manual_lead():
     try:
         with connect() as db:
             db.execute("""INSERT INTO leads (title,description,url,category,score,reason,created_at,intent_label,intent_summary,scored_version)
-                        VALUES (?,?,?,?,?,?,?,?,?,4)""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), cls['intent_label'], cls['intent_summary']))
+                        VALUES (?,?,?,?,?,?,?,?,?,5)""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), cls['intent_label'], cls['intent_summary']))
     except Exception as exc:
         if "UNIQUE" in str(exc):
             return error("Такая ссылка уже сохранена")
