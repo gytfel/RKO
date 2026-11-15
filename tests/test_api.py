@@ -66,6 +66,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.patch(f'/api/leads/{lead_id}', json={'stage':'review', 'notes':'Проверить обсуждение'}, headers=h).status_code, 200)
         self.assertEqual(self.client.get('/api/export?min_score=0').status_code, 200)
 
+
+    def test_referral_card_filter_and_stats(self):
+        token = self.auth()
+        h = {'X-CSRF-Token':token}
+        example = {'title': 'Ищу реферальную ссылку на дебетовую карту Альфа-Банка',
+                   'url': 'https://example.com/discussion/referral-applicant-2026',
+                   'description': 'Хочу оформить карту по приглашению, подскажите'}
+        response = self.client.post('/api/manual', json=example, headers=h)
+        self.assertEqual(response.status_code, 201)
+        stats = self.client.get('/api/stats').get_json()
+        self.assertGreaterEqual(stats['card_requests'], 1)
+        self.assertGreaterEqual(stats['referral_requests'], 1)
+        rows = self.client.get('/api/leads?only_potential=1&category=Карты&referral_only=1&min_score=0').get_json()['items']
+        self.assertTrue(any(x['url']==example['url'] and x['referral_signal']=='asked' for x in rows))
+
     def test_prohibited_internal_source(self):
         token = self.auth()
         r = self.client.post('/api/sources', json={'name':'Localhost', 'url':'https://127.0.0.1/'}, headers={'X-CSRF-Token':token})
