@@ -56,6 +56,28 @@ PY
       *) echo 'Команды: rko-radar telegram setup | status | disable' ;;
     esac
     ;;
+  web)
+    case "${2:-status}" in
+      setup)
+        python3 "$APP_DIR/web_setup.py"
+        systemctl restart "$SERVICE"
+        echo '✓ Поиск по интернету подключён. Запусти поиск из панели RKO Radar.'
+        ;;
+      status)
+        if [[ -s /etc/rko-radar-search.env ]]; then
+          echo 'Tavily API-ключ настроен (не отображается).'
+        else
+          echo 'Tavily не подключён. Команда: sudo rko-radar web setup'
+        fi
+        ;;
+      disable)
+        rm -f /etc/rko-radar-search.env
+        systemctl restart "$SERVICE"
+        echo '✓ Интернет-поиск отключён. Сохранённые публикации остаются.'
+        ;;
+      *) echo 'Команды: rko-radar web setup | status | disable' ;;
+    esac
+    ;;
   upgrade)
     updater="$APP_DIR/../rko-radar-source/scripts/update-vps.sh"
     # Fetch latest updater before pulling app code (first run included).
@@ -96,6 +118,7 @@ RKO Radar — команды управления на VPS:
   rko-radar telegram setup   — личные Telegram-уведомления
   rko-radar telegram status  — проверить Telegram
   rko-radar telegram disable — отключить уведомления
+  rko-radar web setup / status / disable — интернет-поиск через Tavily
   rko-radar upgrade   — обновить с GitHub (без загрузки файлов вручную)
   rko-radar update /путь/к/файлу.sh — установить обновление
 TXT
