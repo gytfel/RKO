@@ -140,7 +140,7 @@ def run_once():
     if not configured() or not LOCK.acquire(blocking=False):
         return False
     # Local import prevents a circular dependency: DeepSeek reuses URL filters here.
-    from deepseek_discovery import configured as ai_configured, analyze_lead
+    from deepseek_discovery import ai_enabled as ai_configured, analyze_lead
     STATUS.update(running=True, added=0, checked=0, errors=[])
     found = []
     candidates = []
