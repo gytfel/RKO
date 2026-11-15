@@ -57,7 +57,7 @@ def score_text(title: str, description: str = '') -> dict:
     question = bool(matches(QUESTION, heading)) or ("?" in body and strong > 0)
     article = matches(ARTICLES, text)
     howto = bool(re.search(HOWTO_TITLE, heading))
-    editorial = bool(matches(EDITORIAL_TITLE, heading)) or bool(re.search(r'\\|[^\\n]{5,100}\\|[^\\n]{5,100}\\|', body))
+    editorial = bool(matches(EDITORIAL_TITLE, heading)) or bool(re.search(r'\|[^\n]{5,100}\|[^\n]{5,100}\|', body))
     # A question in a quoted forum reply or an SEO table is not a new
     # application for a debit card (e.g. extending a premium service).
     premium_maintenance = (category == 'Карты'
