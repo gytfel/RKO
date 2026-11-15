@@ -15,6 +15,9 @@ STRONG_INTENT = [
     r'\b(?:хочу|планирую|собираюсь|собираемся|ищу|выбираю|подыскиваю|думаю)\b',
     r'\b(?:посоветуйте|подскажите|порекомендуйте|помогите\s+выбрать)\b',
     r'\b(?:какой|какую)\s+банк\w*\s+\w*',
+    r'\b(?:какую|какая|какой)\s+(?:дебетов\w*\s+|банковск\w*\s+)?карт\w*\b',
+    r'\b(?:нужен|нужна|нужно|требуется)\s+(?:мне\s+|нам\s+)?(?:карт\w*|сч[её]т|рко)\b',
+    r'\b(?:посоветуй|посоветуйте|подскажи|подскажите)\b',
     r'\bгде\s+(?:лучше|можно|выгоднее)?\s*(?:открыть|оформить|зарегистрировать)\b',
     r'\bкто\s+(?:пользуется|открывал|рекомендует)\b',
 ]
@@ -42,24 +45,30 @@ def score_text(title: str, description: str = '') -> dict:
     if counts[category] == 0:
         return {'category':'Другое','score':0,'reason':'Нет признаков нужной темы', 'intent_label':'information','intent_summary':'Нерелевантная публикация'}
     strong = matches(STRONG_INTENT, text)
-    question = bool(matches(QUESTION, heading))
+    # Some RSS feeds include the actual question only in the summary.
+    question = bool(matches(QUESTION, heading)) or ("?" in body and strong > 0)
     article = matches(ARTICLES, text)
     howto = bool(re.search(HOWTO_TITLE, heading))
     # Without a direct request, publication is not an actionable potential customer.
-    direct = bool(strong and (question or strong >= 2))
+    personal_request = bool(re.search(
+        r'\b(?:хочу|планирую|собираюсь|собираемся|ищу|выбираю|нужен|нужна|нужно|требуется)\b',
+        heading
+    ))
+    direct = bool(strong and (question or strong >= 2 or personal_request))
     if article or howto:
         direct = False
-    # Marketplace posts alone aren't demand for a business bank account.
-    business_product = category in ('РКО','Регистрация бизнеса')
-    qualified = direct and business_product
+    # A specific debit-card question can be a lead too. Generic marketplace
+    # mentions and banking news alone are NOT customer requests.
+    financial_product = category in ('РКО','Регистрация бизнеса','Карты')
+    qualified = direct and financial_product
     score = 14 + min(22, counts[category]*11) + min(32, strong*16) + (20 if question else 0) - min(45, article*20) - (25 if howto else 0)
-    if not business_product: score -= 20
+    if not financial_product: score -= 20
     if not direct: score = min(score, 49)
     if not qualified: score = min(score, 59)
     score = max(0, min(100, score))
     if qualified:
         intent_label = 'potential'
-        intent_summary = 'Есть признаки личного вопроса о банковском продукте или регистрации бизнеса'
+        intent_summary = 'Возможно, человек лично выбирает банковский продукт или регистрацию бизнеса'
     elif article or howto:
         intent_label = 'information'
         intent_summary = 'Скорее статья, новость или рекламный материал'
