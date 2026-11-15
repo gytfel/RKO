@@ -4,12 +4,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import db
-import web_discovery
-
-
 class WebDiscoveryTests(unittest.TestCase):
     def setUp(self):
+        # Import only after API tests establish an isolated DATA_DIR.
+        global db, web_discovery
+        import db
+        import web_discovery
         self.tmp = tempfile.TemporaryDirectory()
         self.old_dir, self.old_file = db.DATA_DIR, db.DB_FILE
         db.DATA_DIR = self.tmp.name
