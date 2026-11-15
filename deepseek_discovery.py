@@ -30,7 +30,7 @@ ANALYSES_PER_RUN = 6
 INTERVAL_SECONDS = 6 * 3600
 
 LOCK = threading.Lock()
-STATUS = {"running": False, "checked": 0, "added": 0, "reviewed": 0,
+STATUS = {"running": False, "checked": 0, "added": 0, "reviewed": 0, "received": 0, "filtered": 0, "duplicates": 0,
           "last_run": None, "errors": []}
 CATEGORIES = ("РКО", "Регистрация бизнеса", "Карты")
 VERDICTS = ("potential", "possible", "information")
@@ -79,11 +79,17 @@ def status():
         classified = db.execute("SELECT COUNT(*) FROM leads WHERE ai_verdict != ''").fetchone()[0]
         last = _read_setting(db, "deepseek_last_run")
         added = int(_read_setting(db, "deepseek_last_added", "0"))
+        received = int(_read_setting(db, "deepseek_last_received", "0"))
+        excluded = int(_read_setting(db, "deepseek_last_filtered", "0"))
+        duplicates = int(_read_setting(db, "deepseek_last_duplicates", "0"))
     return {
         "configured": configured(), "ai_enabled": ai_enabled(), "running": STATUS["running"],
         "last_run": last or None, "added": STATUS["added"] if STATUS["running"] else added,
         "checked": STATUS["checked"], "reviewed": STATUS["reviewed"],
         "results": total, "classified": classified,
+        "received": STATUS["received"] if STATUS["running"] else received,
+        "filtered": STATUS["filtered"] if STATUS["running"] else excluded,
+        "duplicates": STATUS["duplicates"] if STATUS["running"] else duplicates,
         "search_used": _used_today("deepseek_search"), "search_limit": SEARCH_DAILY_LIMIT,
         "analysis_used": _used_today("deepseek_ai"), "analysis_limit": ANALYSIS_DAILY_LIMIT,
         "errors": list(STATUS["errors"])[:3], "interval_hours": 6,
@@ -211,13 +217,13 @@ def analyze_lead(lead_id):
 def run_once():
     if not configured() or not LOCK.acquire(blocking=False):
         return False
-    STATUS.update(running=True, checked=0, added=0, reviewed=0, errors=[])
+    STATUS.update(running=True, checked=0, added=0, reviewed=0, received=0, filtered=0, duplicates=0, errors=[])
     try:
         with connect() as db:
             cursor = int(_read_setting(db, "deepseek_cursor", "0"))
         # Uses a date operator supported by DeepSeek Search; results still need
         # manual date/context verification.
-        earliest = (datetime.now(timezone.utc) - timedelta(days=14)).date().isoformat()
+        earliest = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
         candidate_ids = []
         heuristic_notify = []
         stop = False
@@ -227,20 +233,26 @@ def run_once():
                 break
             query = topic_query + " after:" + earliest
             try:
-                for result in _search(query):
+                results = _search(query)
+                STATUS["received"] += len(results)
+                for result in results:
                     url = public_result_url(result.get("url"))
                     if not url:
+                        STATUS["filtered"] += 1
                         continue
                     title = clean(result.get("title"), 250)
                     description = clean(result.get("summary") or result.get("snippet"), 1300)
                     if not title:
+                        STATUS["filtered"] += 1
                         continue
                     local = score_text(title, description)
                     if local["category"] not in CATEGORIES or local["intent_label"] == "information":
+                        STATUS["filtered"] += 1
                         continue
                     with connect() as db:
                         existing = db.execute("SELECT id FROM leads WHERE url=?", (url,)).fetchone()
                         if existing:
+                            STATUS["duplicates"] += 1
                             continue
                         inserted = db.execute(
                             """INSERT OR IGNORE INTO leads
@@ -257,6 +269,8 @@ def run_once():
                                 candidate_ids.append(inserted.lastrowid)
                             elif not ai_enabled() and local["intent_label"] == "potential":
                                 heuristic_notify.append({"title": title, "url": url, "score": local["score"]})
+                        else:
+                            STATUS["duplicates"] += 1
             except (requests.RequestException, ValueError, RuntimeError) as exc:
                 STATUS["errors"].append(str(exc)[:150])
                 log.warning("DeepSeek search failure (%s)", type(exc).__name__)
@@ -269,6 +283,9 @@ def run_once():
             _put_setting(db, "deepseek_cursor", cursor + 1)
             _put_setting(db, "deepseek_last_run", now())
             _put_setting(db, "deepseek_last_added", STATUS["added"])
+            _put_setting(db, "deepseek_last_received", STATUS["received"])
+            _put_setting(db, "deepseek_last_filtered", STATUS["filtered"])
+            _put_setting(db, "deepseek_last_duplicates", STATUS["duplicates"])
         # Use spare analysis capacity to re-check earlier RSS/Tavily questions too.
         # Never rescore unrelated posts or overwrite manually entered CRM stages.
         if ai_enabled() and len(candidate_ids) < ANALYSES_PER_RUN:
