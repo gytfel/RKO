@@ -47,6 +47,11 @@ SITES=/etc/caddy/sites-enabled
 SITEFILE="$SITES/rko-radar.caddy"
 CREDS=/root/.rko-radar-web-access
 mkdir -p "$SITES"
+# The installer runs with umask 077; Caddy's systemd service runs as user caddy.
+# Allow that service to traverse the imported site directory without exposing any password file.
+getent group caddy >/dev/null || fail 'Системная группа caddy не найдена.'
+chgrp caddy "$SITES"
+chmod 750 "$SITES"
 if [[ -f "$CREDS" ]]; then
   # Created by this installer with mode 600; root-only.
   # shellcheck disable=SC1090
@@ -96,6 +101,11 @@ ${DOMAIN} {
     reverse_proxy 127.0.0.1:${PORT}
 }
 EOF
+# Config contains only a bcrypt hash, not the plaintext password.
+# Make both the main config and the included file readable by the Caddy service.
+chgrp caddy "$CADDYFILE" "$SITEFILE"
+chmod g+r "$CADDYFILE"
+chmod 640 "$SITEFILE"
 if ! caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1; then
   # Caddy before v2.8 called basic_auth 'basicauth'.
   sed -i 's/    basic_auth {/    basicauth {/' "$SITEFILE"
@@ -103,8 +113,8 @@ fi
 if ! caddy validate --config "$CADDYFILE" --adapter caddyfile; then
   fail "Неверная конфигурация Caddy; проверяй $CADDYFILE и $SITEFILE."
 fi
-systemctl enable --now caddy >/dev/null || fail 'Не удалось запустить Caddy.'
-systemctl reload caddy || systemctl restart caddy || fail 'Не удалось применить настройки Caddy.'
+systemctl enable --now caddy >/dev/null || { journalctl -u caddy -n 30 --no-pager >&2 || true; fail 'Не удалось запустить Caddy.'; }
+systemctl reload caddy || systemctl restart caddy || { journalctl -u caddy -n 30 --no-pager >&2 || true; fail 'Не удалось применить настройки Caddy.'; }
 if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
   ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
