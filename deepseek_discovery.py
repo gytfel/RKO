@@ -52,6 +52,11 @@ def configured():
     return bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
 
 
+def ai_enabled():
+    """AI calls are paid and require explicit opt-in during key setup."""
+    return configured() and os.getenv("DEEPSEEK_ANALYZE", "0") == "1"
+
+
 def _read_setting(db, key, default=""):
     row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
@@ -87,7 +92,7 @@ def status():
         last = _read_setting(db, "deepseek_last_run")
         added = int(_read_setting(db, "deepseek_last_added", "0"))
     return {
-        "configured": configured(), "running": STATUS["running"],
+        "configured": configured(), "ai_enabled": ai_enabled(), "running": STATUS["running"],
         "last_run": last or None, "added": STATUS["added"] if STATUS["running"] else added,
         "checked": STATUS["checked"], "reviewed": STATUS["reviewed"],
         "results": total, "classified": classified,
@@ -175,7 +180,7 @@ def _analyze(title, description):
 
 def analyze_lead(lead_id):
     """Add AI interpretation without changing the author's notes or CRM stage."""
-    if not configured():
+    if not ai_enabled():
         return None
     with connect() as db:
         row = db.execute(
@@ -256,7 +261,7 @@ def run_once():
                         )
                         if inserted.rowcount:
                             STATUS["added"] += 1
-                            if len(candidate_ids) < ANALYSES_PER_RUN:
+                            if ai_enabled() and len(candidate_ids) < ANALYSES_PER_RUN:
                                 candidate_ids.append(inserted.lastrowid)
             except (requests.RequestException, ValueError, RuntimeError) as exc:
                 STATUS["errors"].append(str(exc)[:150])
@@ -271,6 +276,17 @@ def run_once():
             _put_setting(db, "deepseek_last_run", now())
             _put_setting(db, "deepseek_last_added", STATUS["added"])
         to_notify = []
+        if not ai_enabled():
+            # Search-only mode: use local conservative classification and no model charges.
+            with connect() as db:
+                rows = db.execute(
+                    """SELECT title,url,score FROM leads
+                       WHERE origin='deepseek' AND created_at >= ?
+                       AND intent_label='potential' ORDER BY id DESC LIMIT 5""",
+                    ((datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec='seconds'),),
+                ).fetchall()
+            # Do not send notifications in search-only mode for old results.
+            # New results still appear in the dashboard and can be reviewed manually.
         for lead_id in candidate_ids:
             verdict = analyze_lead(lead_id)
             if verdict is not None:
