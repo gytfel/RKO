@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from db import connect, get_setting, now
 from scoring import score_text
 from notifications import new_opportunities
+from deepseek_discovery import configured as ai_configured, analyze_lead
 
 log = logging.getLogger(__name__)
 USER_AGENT = "RKORadar/1.0 (+self-hosted RSS reader; manual-contact-only)"
@@ -80,6 +81,7 @@ def run_once():
         with connect() as db:
             sources = [dict(row) for row in db.execute("SELECT * FROM sources WHERE enabled=1 ORDER BY id")]
         opportunities = []
+        candidates = []
         for source in sources:
             error = ""
             try:
@@ -102,8 +104,11 @@ def run_once():
                           cls["category"], cls["score"], cls["reason"], now(), entry.get("published", "")[:120],
                           cls["intent_label"], cls["intent_summary"]))
                         STATUS["added"] += cur.rowcount
-                        if cur.rowcount and cls['intent_label'] == 'potential':
-                            opportunities.append({'title': title, 'score': cls['score'], 'url': url})
+                        if cur.rowcount:
+                            if cls['intent_label'] == 'potential' and not ai_configured():
+                                opportunities.append({'title': title, 'score': cls['score'], 'url': url})
+                            if ai_configured() and cls['category'] in ('РКО','Регистрация бизнеса','Карты') and len(candidates) < 3:
+                                candidates.append(cur.lastrowid)
             except Exception as exc:
                 error = str(exc)[:250]
                 STATUS["errors"].append(f"{source['name']}: {error}")
@@ -111,8 +116,16 @@ def run_once():
             with connect() as db:
                 db.execute("UPDATE sources SET checked_at=?, last_error=? WHERE id=?", (now(), error, source["id"]))
             STATUS["checked"] += 1
-        # Alerts only for NEW entries; rescoring historic rows cannot flood the chat.
-        new_opportunities(opportunities)
+        # AI reviews only a few NEW public entries per RSS scan; bounded daily budget.
+        for lead_id in candidates:
+            verdict = analyze_lead(lead_id)
+            if verdict and verdict['verdict'] == 'potential':
+                with connect() as db:
+                    row = db.execute("SELECT title, score, url FROM leads WHERE id=?", (lead_id,)).fetchone()
+                if row:
+                    opportunities.append(dict(row))
+        # Never message found authors. Notify only the RKO Radar owner.
+        new_opportunities(opportunities[:5])
     finally:
         STATUS["running"] = False
         STATUS["last_run"] = now()
