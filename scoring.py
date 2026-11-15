@@ -8,7 +8,10 @@ TOPICS = {
     'РКО': [r'\bрко\b', r'расч[её]тн\w*\s+сч[её]т', r'сч[её]т\s+(?:для|на)\s+(?:ип|ооо|бизнеса)', r'банк\s+для\s+(?:ип|ооо|бизнеса)', r'банк\w*\s+(?:выбрать|лучше|посоветуете)\s+для\s+(?:ип|ооо)', r'сч[её]т\s+(?:ип|ооо)', r'расч[её]тно.кассов'],
     'Регистрация бизнеса': [r'откры\w*\s+ип\b', r'регистрац\w*\s+ип', r'зарегистрирова\w*\s+ооо', r'откры\w*\s+ооо', r'оформить\s+ип', r'регистрир\w*\s+бизнес'],
     'Маркетплейсы': [r'wildberries', r'вайлдберриз', r'\bozon\b', r'\bозон\b', r'маркетплейс', r'селлер', r'продавц\w*\s+на\s+(?:вб|озон)'],
-    'Карты': [r'дебетов\w*\s+карт', r'к[еэ]шб[еэ]к', r'банковск\w*\s+карт', r'карт\w*\s+для\s+покупок'],
+    'Карты': [r'дебетов\w*\s+карт', r'к[еэ]шб[еэ]к', r'банковск\w*\s+карт', r'карт\w*\s+для\s+покупок',
+              r'\bдебетовк\w*\b', r'\b(?:оформить|заказать|завести|выбрать)\s+(?:себе\s+|новую\s+|дебетовую\s+|банковскую\s+)*карт\w*',
+              r'\b(?:реферальн\w*\s+ссылк\w*|приглашени\w*)\s+(?:на|для)\s+дебетов\w*\s+карт\w*',
+              r'\b(?:альфа.карта|карта\s+альфа.банка)\b'],
 }
 STRONG_INTENT = [
     r'\b(?:мне|нам)\s+(?:нужен|нужна|нужно|требуется)\b',
@@ -38,6 +41,21 @@ EDITORIAL_TITLE = [
 PREMIUM_SERVICE = r'\b(?:премиум|premium|премиальн\w*\s+(?:пакет|подписк)|привилеги\w*|продлени\w*\s+премиум)\b'
 CARD_ACQUISITION = r'\b(?:открыть|оформить|выбрать|посоветуйте|подскажите)\s+(?:мне\s+|новую\s+|лучшую\s+|дебетовую\s+|банковскую\s+)*карт\w*\b'
 
+
+# "Interested in a referral" is only an observable PUBLIC request, not consent.
+REFERRAL_REQUEST = [
+    r'\b(?:ищу|нужна|нужен|поделитесь|скиньте|дайте)\b.{0,45}\b(?:реф(?:еральн\w*)?\s*ссылк\w*|рефк\w*|приглашени\w*|рефералк\w*)\b',
+    r'\b(?:у кого|есть у кого|кто даст)\s+.{0,30}\b(?:приглашени\w*|рефералк\w*|рефк\w*|реферальн\w*\s+ссылк\w*)\b',
+    r'\b(?:хочу|готов|собираюсь)\s+оформить\b.{0,55}\b(?:по приглашению|по реферальной ссылке)\b',
+]
+REFERRAL_AD = [
+    r'\b(?:по моей|моя)\s+(?:реферальной\s+)?ссылк\w*',
+    r'\b(?:приглашаю|дарю|предлагаю|раздаю)\b.{0,45}\b(?:ссылк\w*|карт\w*|бонус\w*)',
+    r'\b(?:переходите по ссылке|оформите по ссылке|получите бонус|получи бонус|рефбэк от меня)\b',
+    r'https?://\S+\b(?:ref|invite|promo)\b',
+]
+CREDIT_ONLY = r'\b(?:кредитн\w*\s+карт\w*|кредитк\w*|кредитный лимит|минимальный платеж)\b'
+
 def matches(patterns, text):
     return sum(1 for p in patterns if re.search(p, text, re.I))
 
@@ -51,10 +69,13 @@ def score_text(title: str, description: str = '') -> dict:
     if category is None:
         category = max(counts, key=counts.get)
     if counts[category] == 0:
-        return {'category':'Другое','score':0,'reason':'Нет признаков нужной темы', 'intent_label':'information','intent_summary':'Нерелевантная публикация'}
+        return {'category':'Другое','score':0,'reason':'Нет признаков нужной темы', 'intent_label':'information','intent_summary':'Нерелевантная публикация', 'referral_signal':''}
     strong = matches(STRONG_INTENT, text)
     # Some RSS feeds include the actual question only in the summary.
     question = bool(matches(QUESTION, heading)) or ("?" in body and strong > 0)
+    advertised = bool(matches(REFERRAL_AD, heading + ' ' + body[:600]))
+    referral_request = (category == 'Карты' and bool(matches(REFERRAL_REQUEST, heading + ' ' + body[:400]))
+                        and not advertised and not re.search(CREDIT_ONLY, heading))
     article = matches(ARTICLES, text)
     howto = bool(re.search(HOWTO_TITLE, heading))
     editorial = bool(matches(EDITORIAL_TITLE, heading)) or bool(re.search(r'\|[^\n]{5,100}\|[^\n]{5,100}\|', body))
@@ -69,26 +90,32 @@ def score_text(title: str, description: str = '') -> dict:
         heading
     ))
     direct = bool(strong and (question or strong >= 2 or personal_request))
-    if article or howto or editorial or premium_maintenance:
+    if article or howto or editorial or premium_maintenance or advertised:
         direct = False
+    if referral_request and not (article or howto or editorial or premium_maintenance):
+        direct = True
     # A specific debit-card question can be a lead too. Generic marketplace
     # mentions and banking news alone are NOT customer requests.
     financial_product = category in ('РКО','Регистрация бизнеса','Карты')
     qualified = direct and financial_product
     score = 14 + min(22, counts[category]*11) + min(32, strong*16) + (20 if question else 0) - min(45, article*20) - (25 if howto else 0)
     if not financial_product: score -= 20
-    if editorial or premium_maintenance: score = min(score, 25)
+    if editorial or premium_maintenance or advertised: score = min(score, 25)
+    if referral_request and qualified: score = max(score, 85)
     if not direct: score = min(score, 49)
     if not qualified: score = min(score, 59)
     score = max(0, min(100, score))
     if qualified:
         intent_label = 'potential'
         intent_summary = 'Возможно, человек лично выбирает банковский продукт или регистрацию бизнеса'
-    elif article or howto or editorial or premium_maintenance:
+    elif article or howto or editorial or premium_maintenance or advertised:
         intent_label = 'information'
         intent_summary = 'Скорее статья, новость или рекламный материал'
     else:
         intent_label = 'possible'
         intent_summary = 'Тема подходит, но явного намерения оформить продукт не найдено'
+    referral_signal = 'asked' if referral_request and qualified else ''
+    if referral_signal:
+        intent_summary = 'Публичный вопрос о реферальной ссылке/приглашении; заинтересованность нужно проверить'
     reasons = [f'Тема: {category}', intent_summary]
-    return {'category':category, 'score':score, 'reason':'; '.join(reasons), 'intent_label':intent_label, 'intent_summary':intent_summary}
+    return {'category':category, 'score':score, 'reason':'; '.join(reasons), 'intent_label':intent_label, 'intent_summary':intent_summary, 'referral_signal':referral_signal}
