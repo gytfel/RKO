@@ -11,7 +11,7 @@ APP='/opt/rko-radar'
 DATA='/var/lib/rko-radar'
 SERVICE='rko-radar.service'
 BKDIR='/root/rko-radar-backups'
-NEW_FILES=(app.py collector.py db.py scoring.py notifications.py telegram_setup.py requirements.txt)
+NEW_FILES=(app.py collector.py db.py scoring.py notifications.py telegram_setup.py web_discovery.py web_setup.py requirements.txt)
 
 fail() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
 msg() { printf '\n== %s ==\n' "$*"; }
@@ -45,7 +45,7 @@ for f in "${NEW_FILES[@]}"; do [[ -f "$CHECKOUT/$f" ]] || fail "В репози�
 [[ -f "$CHECKOUT/manage.sh" && -f "$CHECKOUT/templates/login.html" && -f "$CHECKOUT/static/app.js" ]] || fail 'Неполный код веб-интерфейса.'
 
 msg '2/5. Проверка кода и зависимостей'
-"$APP/.venv/bin/python" -m compileall -q "$CHECKOUT/app.py" "$CHECKOUT/collector.py" "$CHECKOUT/db.py" "$CHECKOUT/scoring.py" "$CHECKOUT/notifications.py" "$CHECKOUT/telegram_setup.py" || fail 'Ошибка синтаксиса Python.'
+"$APP/.venv/bin/python" -m compileall -q "$CHECKOUT/app.py" "$CHECKOUT/collector.py" "$CHECKOUT/db.py" "$CHECKOUT/scoring.py" "$CHECKOUT/notifications.py" "$CHECKOUT/telegram_setup.py" "$CHECKOUT/web_discovery.py" "$CHECKOUT/web_setup.py" || fail 'Ошибка синтаксиса Python.'
 "$APP/.venv/bin/python" -m pip install --disable-pip-version-check -q -r "$CHECKOUT/requirements.txt" || fail 'Ошибка установки зависимостей; действующий сервер не остановлен.'
 
 TMP="$(mktemp -d /root/rko-github-update.XXXXXXXX)"
@@ -86,6 +86,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$BKDIR/rko-before-github-$STAMP.tar.gz"
 BACKUP_ITEMS=(var/lib/rko-radar etc/rko-radar.env)
 [[ ! -f /etc/rko-radar-notify.env ]] || BACKUP_ITEMS+=(etc/rko-radar-notify.env)
+[[ ! -f /etc/rko-radar-search.env ]] || BACKUP_ITEMS+=(etc/rko-radar-search.env)
 tar -czf "$BACKUP" -C / "${BACKUP_ITEMS[@]}" || fail 'Не удалось создать резервную копию.'
 chmod 600 "$BACKUP"
 
@@ -103,6 +104,7 @@ mkdir -p /etc/systemd/system/rko-radar.service.d
 cat > /etc/systemd/system/rko-radar.service.d/notify.conf <<'SYSTEMD'
 [Service]
 EnvironmentFile=-/etc/rko-radar-notify.env
+EnvironmentFile=-/etc/rko-radar-search.env
 SYSTEMD
 systemctl daemon-reload
 systemctl start "$SERVICE" || fail 'Служба не запустилась.'
