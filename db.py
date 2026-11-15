@@ -51,7 +51,10 @@ def initialize():
                                  ("scored_version", "INTEGER NOT NULL DEFAULT 3")):
             if name not in columns:
                 db.execute(f"ALTER TABLE leads ADD COLUMN {name} {definition}")
+        if "origin" not in columns:
+            db.execute("ALTER TABLE leads ADD COLUMN origin TEXT NOT NULL DEFAULT 'rss'")
         db.execute("CREATE INDEX IF NOT EXISTS idx_leads_intent ON leads(intent_label, score DESC)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_leads_origin ON leads(origin, created_at DESC)")
         db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('poll_minutes','60')")
         db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('min_score','35')")
         db.execute("""INSERT OR IGNORE INTO sources(name,url,enabled,created_at)
