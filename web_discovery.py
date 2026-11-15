@@ -27,7 +27,7 @@ QUERIES_PER_RUN = 5
 DAILY_LIMIT = 24     # 24/day, <= 744 basic queries in a 31-day month.
 RUN_EVERY_SECONDS = 6 * 3600
 LOCK = threading.Lock()
-STATUS = {"running": False, "added": 0, "checked": 0, "errors": [], "last_run": None}
+STATUS = {"running": False, "added": 0, "checked": 0, "received": 0, "filtered": 0, "duplicates": 0, "errors": [], "last_run": None}
 
 
 def configured():
@@ -68,11 +68,17 @@ def status():
         last = _setting(db, "web_last_run")
         added = int(_setting(db, "web_last_added", "0"))
         total = db.execute("SELECT COUNT(*) FROM leads WHERE origin='web'").fetchone()[0]
+        returned = int(_setting(db, "web_last_received", "0"))
+        excluded = int(_setting(db, "web_last_filtered", "0"))
+        duplicates = int(_setting(db, "web_last_duplicates", "0"))
     return {
         "configured": configured(), "running": STATUS["running"],
         "last_run": last or None, "added": STATUS["added"] if STATUS["running"] else added,
         "checked": STATUS["checked"], "errors": list(STATUS["errors"])[:3],
         "used_today": used, "daily_limit": DAILY_LIMIT, "results": total,
+        "received": STATUS["received"] if STATUS["running"] else returned,
+        "filtered": STATUS["filtered"] if STATUS["running"] else excluded,
+        "duplicates": STATUS["duplicates"] if STATUS["running"] else duplicates,
         "queries_per_run": QUERIES_PER_RUN, "interval_hours": 6,
         "site_names": list(PUBLIC_SITE_NAMES), "card_search_enabled": True,
     }
@@ -109,7 +115,7 @@ def _search(query, key):
         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
         json={
             "query": query, "search_depth": "basic", "topic": "general",
-            "max_results": 10, "time_range": "week",
+            "max_results": 10, "time_range": "month",
             "include_answer": False, "include_raw_content": False, "include_images": False,
         },
         timeout=(5, 18),
@@ -130,7 +136,7 @@ def run_once():
         return False
     # Local import prevents a circular dependency: DeepSeek reuses URL filters here.
     from deepseek_discovery import ai_enabled as ai_configured, analyze_lead
-    STATUS.update(running=True, added=0, checked=0, errors=[])
+    STATUS.update(running=True, added=0, checked=0, received=0, filtered=0, duplicates=0, errors=[])
     found = []
     candidates = []
     try:
@@ -142,16 +148,21 @@ def run_once():
                 STATUS["errors"].append("Достигнут дневной лимит поиска; повторим завтра.")
                 break
             try:
-                for result in _search(query, key):
+                results = _search(query, key)
+                STATUS["received"] += len(results)
+                for result in results:
                     url = public_result_url(result.get("url"))
                     if not url:
+                        STATUS["filtered"] += 1
                         continue
                     title = clean(result.get("title"), 250)
                     description = clean(result.get("content"), 1300)
                     if not title:
+                        STATUS["filtered"] += 1
                         continue
                     cls = score_text(title, description)
                     if cls["intent_label"] == "information" or cls["category"] == "Другое":
+                        STATUS["filtered"] += 1
                         continue
                     # These are suggestions, not proof of an actual bank application.
                     with connect() as db:
@@ -170,6 +181,8 @@ def run_once():
                                 found.append({"title": title, "score": cls["score"], "url": url})
                             if ai_configured() and len(candidates) < 4:
                                 candidates.append(new.lastrowid)
+                        else:
+                            STATUS["duplicates"] += 1
             except (requests.RequestException, ValueError, RuntimeError) as exc:
                 # Never log HTTP request headers (they contain the API key).
                 STATUS["errors"].append(str(exc)[:180])
@@ -179,6 +192,9 @@ def run_once():
             _put(db, "web_cursor", cursor + 1)
             _put(db, "web_last_run", now())
             _put(db, "web_last_added", STATUS["added"])
+            _put(db, "web_last_received", STATUS["received"])
+            _put(db, "web_last_filtered", STATUS["filtered"])
+            _put(db, "web_last_duplicates", STATUS["duplicates"])
         for lead_id in candidates:
             verdict = analyze_lead(lead_id)
             if verdict and verdict["verdict"] == "potential":
