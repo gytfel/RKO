@@ -24,6 +24,21 @@ class Scoring(unittest.TestCase):
     def test_informal_question(self):
         self.assertEqual(score_text('Подскажите, какой банк лучше для ИП?')['intent_label'], 'potential')
 
+    def test_card_question_is_relevant(self):
+        d = score_text('Подскажите, какую дебетовую карту выбрать?', 'Хочу оформить карту для покупок')
+        self.assertEqual(d['category'], 'Карты')
+        self.assertEqual(d['intent_label'], 'potential')
+
+    def test_rko_statement_without_question_mark(self):
+        d = score_text('Ищу банк для ИП', 'Мне нужен расчётный счёт')
+        self.assertEqual(d['category'], 'РКО')
+        self.assertEqual(d['intent_label'], 'potential')
+
+    def test_card_news_not_customer(self):
+        d = score_text('Банк объявил о новых дебетовых картах', 'Новости и обзор тарифов')
+        self.assertEqual(d['category'], 'Карты')
+        self.assertNotEqual(d['intent_label'], 'potential')
+
     def test_marketplace_news(self):
         self.assertNotEqual(score_text('Новости Wildberries: обновление тарифов')['intent_label'], 'potential')
 
