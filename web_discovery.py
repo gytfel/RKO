@@ -139,8 +139,11 @@ def _search(query, key):
 def run_once():
     if not configured() or not LOCK.acquire(blocking=False):
         return False
+    # Local import prevents a circular dependency: DeepSeek reuses URL filters here.
+    from deepseek_discovery import configured as ai_configured, analyze_lead
     STATUS.update(running=True, added=0, checked=0, errors=[])
     found = []
+    candidates = []
     try:
         with connect() as db:
             cursor = int(_setting(db, "web_cursor", "0")) % len(QUERIES)
@@ -175,8 +178,10 @@ def run_once():
                         )
                         if new.rowcount:
                             STATUS["added"] += 1
-                            if cls["intent_label"] == "potential":
+                            if cls["intent_label"] == "potential" and not ai_configured():
                                 found.append({"title": title, "score": cls["score"], "url": url})
+                            if ai_configured() and len(candidates) < 4:
+                                candidates.append(new.lastrowid)
             except (requests.RequestException, ValueError, RuntimeError) as exc:
                 # Never log HTTP request headers (they contain the API key).
                 STATUS["errors"].append(str(exc)[:180])
@@ -186,6 +191,13 @@ def run_once():
             _put(db, "web_cursor", (cursor + STATUS["checked"]) % len(QUERIES))
             _put(db, "web_last_run", now())
             _put(db, "web_last_added", STATUS["added"])
+        for lead_id in candidates:
+            verdict = analyze_lead(lead_id)
+            if verdict and verdict["verdict"] == "potential":
+                with connect() as db:
+                    row = db.execute("SELECT title, score, url FROM leads WHERE id=?", (lead_id,)).fetchone()
+                if row:
+                    found.append(dict(row))
         new_opportunities(found[:5])
     finally:
         STATUS["last_run"] = now()
