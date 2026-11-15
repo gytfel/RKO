@@ -99,10 +99,10 @@ def run_once():
                     with connect() as db:
                         cur = db.execute("""INSERT OR IGNORE INTO leads
                           (source_id,title,description,url,category,score,reason,created_at,published_at,
-                           intent_label,intent_summary,scored_version)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,6)""", (source["id"], title, description, url,
+                           intent_label,intent_summary,scored_version,referral_signal)
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,7,?)""", (source["id"], title, description, url,
                           cls["category"], cls["score"], cls["reason"], now(), entry.get("published", "")[:120],
-                          cls["intent_label"], cls["intent_summary"]))
+                          cls["intent_label"], cls["intent_summary"], cls["referral_signal"]))
                         STATUS["added"] += cur.rowcount
                         if cur.rowcount:
                             if cls['intent_label'] == 'potential' and not ai_configured():
