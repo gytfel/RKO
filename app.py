@@ -24,7 +24,8 @@ if not password or len(password) < 12 or not secret or len(secret) < 32:
 app.secret_key = secret
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "0") == "1",
-                  PERMANENT_SESSION_LIFETIME=timedelta(hours=12), MAX_CONTENT_LENGTH=100_000)
+                  PERMANENT_SESSION_LIFETIME=timedelta(days=30), SESSION_REFRESH_EACH_REQUEST=True,
+                  SEND_FILE_MAX_AGE_DEFAULT=timedelta(days=7), MAX_CONTENT_LENGTH=100_000)
 PASSWORD_HASH = generate_password_hash(password)
 FAILED_LOGINS = {}
 LOGIN_LOCK = threading.Lock()
@@ -41,7 +42,7 @@ def security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
-    if request.path.startswith("/api"):
+    if not request.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -91,7 +92,9 @@ def login():
         if check_password_hash(PASSWORD_HASH, request.form.get("password", "")):
             session.clear()
             session["auth"] = True
-            session.permanent = True
+            # Persist for up to 30 days only on a device the user chooses to remember.
+            # Flask signs the cookie; passwords and API keys are never placed in it.
+            session.permanent = request.form.get("remember_device") == "yes"
             csrf()
             with LOGIN_LOCK:
                 FAILED_LOGINS.pop(ip, None)
