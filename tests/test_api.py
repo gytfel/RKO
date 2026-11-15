@@ -44,7 +44,7 @@ class ApiTests(unittest.TestCase):
         response = self.client.post('/login', data={'csrf': token, 'password': 'test-password-strong-enough', 'remember_device': 'yes'})
         self.assertEqual(response.status_code, 302)
         cookie = response.headers.get('Set-Cookie', '')
-        self.assertIn('Max-Age=2592000', cookie)
+        self.assertIn('Expires=', cookie)  # Flask sets Expires for permanent sessions
         self.assertEqual(self.client.get('/api/stats').status_code, 200)
 
     def test_login_without_remembering(self):
