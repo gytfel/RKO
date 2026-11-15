@@ -54,6 +54,16 @@ def initialize():
         if "origin" not in columns:
             db.execute("ALTER TABLE leads ADD COLUMN origin TEXT NOT NULL DEFAULT 'rss'")
         db.execute("CREATE INDEX IF NOT EXISTS idx_leads_intent ON leads(intent_label, score DESC)")
+        # AI review is additive: retain notes, stage, source and the original text.
+        ai_columns = {
+            "ai_verdict": "TEXT NOT NULL DEFAULT ''",
+            "ai_confidence": "INTEGER NOT NULL DEFAULT 0",
+            "ai_reason": "TEXT NOT NULL DEFAULT ''",
+            "ai_reply": "TEXT NOT NULL DEFAULT ''",
+        }
+        for name, definition in ai_columns.items():
+            if name not in columns:
+                db.execute(f"ALTER TABLE leads ADD COLUMN {name} {definition}")
         db.execute("CREATE INDEX IF NOT EXISTS idx_leads_origin ON leads(origin, created_at DESC)")
         db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('poll_minutes','60')")
         db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('min_score','35')")
