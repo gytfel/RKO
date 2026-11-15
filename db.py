@@ -64,7 +64,10 @@ def initialize():
         for name, definition in ai_columns.items():
             if name not in columns:
                 db.execute(f"ALTER TABLE leads ADD COLUMN {name} {definition}")
+        if "referral_signal" not in columns:
+            db.execute("ALTER TABLE leads ADD COLUMN referral_signal TEXT NOT NULL DEFAULT ''")
         db.execute("CREATE INDEX IF NOT EXISTS idx_leads_origin ON leads(origin, created_at DESC)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_leads_referral ON leads(referral_signal, intent_label)")
         db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('poll_minutes','60')")
         db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('min_score','35')")
         db.execute("""INSERT OR IGNORE INTO sources(name,url,enabled,created_at)
@@ -81,10 +84,10 @@ def rescore_existing(limit=50000):
     from scoring import score_text
     updated = 0
     with connect() as db:
-        rows = db.execute("SELECT id, title, description FROM leads WHERE scored_version < 6 AND ai_verdict='' LIMIT ?", (limit,)).fetchall()
+        rows = db.execute("SELECT id, title, description FROM leads WHERE scored_version < 7 AND ai_verdict='' LIMIT ?", (limit,)).fetchall()
         for row in rows:
             value = score_text(row['title'], row['description'])
-            db.execute("""UPDATE leads SET category=?, score=?, reason=?, intent_label=?, intent_summary=?, scored_version=6
-                         WHERE id=?""", (value['category'], value['score'], value['reason'], value['intent_label'], value['intent_summary'], row['id']))
+            db.execute("""UPDATE leads SET category=?, score=?, reason=?, intent_label=?, intent_summary=?, referral_signal=?, scored_version=7
+                         WHERE id=?""", (value['category'], value['score'], value['reason'], value['intent_label'], value['intent_summary'], value['referral_signal'], row['id']))
             updated += 1
     return updated
