@@ -59,6 +59,31 @@ class Scoring(unittest.TestCase):
                        'Подскажите пожалуйста, какие документы нужны, чтобы открыть расчетный счет в банке для ООО')
         self.assertEqual(d['intent_label'], 'potential')
         self.assertEqual(d['category'], 'РКО')
+
+    def test_explicit_referral_request(self):
+        d = score_text('Ищу реферальную ссылку на дебетовую карту Альфа-Банка',
+                       'Хочу оформить новую карту по приглашению, подскажите ссылку')
+        self.assertEqual(d['category'], 'Карты')
+        self.assertEqual(d['intent_label'], 'potential')
+        self.assertEqual(d['referral_signal'], 'asked')
+        self.assertGreaterEqual(d['score'], 80)
+
+    def test_referral_ad_not_customer(self):
+        d = score_text('Обмен приглашениями Альфа-Банка',
+                       'Оформите дебетовую карту по моей реферальной ссылке, получите бонус!')
+        self.assertNotEqual(d['intent_label'], 'potential')
+        self.assertEqual(d['referral_signal'], '')
+
+    def test_new_card_application(self):
+        d = score_text('Хочу оформить дебетовую карту без платы за обслуживание')
+        self.assertEqual(d['category'], 'Карты')
+        self.assertEqual(d['intent_label'], 'potential')
+        self.assertEqual(d['referral_signal'], '')
+
+    def test_question_about_existing_card_not_an_application(self):
+        d = score_text('Как восстановить кешбэк по уже открытой банковской карте?')
+        self.assertNotEqual(d['intent_label'], 'potential')
+
     def test_marketplace_news(self):
         self.assertNotEqual(score_text('Новости Wildberries: обновление тарифов')['intent_label'], 'potential')
 
