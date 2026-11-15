@@ -81,6 +81,18 @@ class ApiTests(unittest.TestCase):
         rows = self.client.get('/api/leads?only_potential=1&category=Карты&referral_only=1&min_score=0').get_json()['items']
         self.assertTrue(any(x['url']==example['url'] and x['referral_signal']=='asked' for x in rows))
 
+    def test_card_review_signals_are_not_confused_with_leads(self):
+        token = self.auth()
+        example = {'title': 'Дебетовая карта для покупок и кешбэка',
+                   'url': 'https://example.com/discussion/card-review-nonlead-2026',
+                   'description': 'Обсуждение полезных тарифов без явного запроса оформить карту'}
+        response = self.client.post('/api/manual', json=example, headers={'X-CSRF-Token':token})
+        self.assertEqual(response.status_code, 201)
+        signal_rows = self.client.get('/api/leads?category=Карты&signals_only=1&min_score=0').get_json()['items']
+        opportunity_rows = self.client.get('/api/leads?category=Карты&only_potential=1&min_score=0').get_json()['items']
+        self.assertTrue(any(x['url']==example['url'] for x in signal_rows))
+        self.assertFalse(any(x['url']==example['url'] for x in opportunity_rows))
+
     def test_prohibited_internal_source(self):
         token = self.auth()
         r = self.client.post('/api/sources', json={'name':'Localhost', 'url':'https://127.0.0.1/'}, headers={'X-CSRF-Token':token})
