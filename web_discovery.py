@@ -18,23 +18,11 @@ from bs4 import BeautifulSoup
 from db import connect, get_setting, now
 from notifications import new_opportunities
 from scoring import score_text
+from search_catalog import tavily_plan, PUBLIC_SITE_NAMES
 
 log = logging.getLogger(__name__)
 ENDPOINT = "https://api.tavily.com/search"
-QUERIES = (
-    '"где открыть расчетный счет" ИП форум',
-    '"посоветуйте РКО" для ИП',
-    '"какой банк выбрать для ИП" обсуждение',
-    '"подскажите банк" "расчетный счет"',
-    '"хочу открыть ИП" "какой банк"',
-    '"открыть ООО" "расчетный счет" вопрос',
-    '"какую дебетовую карту выбрать" форум',
-    '"хочу оформить дебетовую карту" совет',
-    'site:banki.ru "ИП" "банк" "посоветуйте"',
-    'site:vc.ru "расчетный счет" "посоветуйте"',
-    'site:hranidengi.com "дебетовую карту" "подскажите"',
-    '"ищу банк для ИП" обсуждение',
-)
+
 QUERIES_PER_RUN = 5
 DAILY_LIMIT = 24     # 24/day, <= 744 basic queries in a 31-day month.
 RUN_EVERY_SECONDS = 6 * 3600
@@ -86,6 +74,7 @@ def status():
         "checked": STATUS["checked"], "errors": list(STATUS["errors"])[:3],
         "used_today": used, "daily_limit": DAILY_LIMIT, "results": total,
         "queries_per_run": QUERIES_PER_RUN, "interval_hours": 6,
+        "site_names": list(PUBLIC_SITE_NAMES), "card_search_enabled": True,
     }
 
 
@@ -146,13 +135,12 @@ def run_once():
     candidates = []
     try:
         with connect() as db:
-            cursor = int(_setting(db, "web_cursor", "0")) % len(QUERIES)
+            cursor = int(_setting(db, "web_cursor", "0"))
         key = os.environ["TAVILY_API_KEY"].strip()
-        for i in range(QUERIES_PER_RUN):
+        for query in tavily_plan(cursor):
             if not _consume_credit():
                 STATUS["errors"].append("Достигнут дневной лимит поиска; повторим завтра.")
                 break
-            query = QUERIES[(cursor + i) % len(QUERIES)]
             try:
                 for result in _search(query, key):
                     url = public_result_url(result.get("url"))
@@ -170,11 +158,11 @@ def run_once():
                         new = db.execute(
                             """INSERT OR IGNORE INTO leads
                                (source_id,title,description,url,category,score,reason,created_at,
-                                published_at,intent_label,intent_summary,scored_version,origin)
-                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,6,'web')""",
+                                published_at,intent_label,intent_summary,scored_version,origin,referral_signal)
+                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,7,'web',?)""",
                             (title, description, url, cls["category"], cls["score"],
                              cls["reason"], now(), str(result.get("published_date") or "")[:120],
-                             cls["intent_label"], cls["intent_summary"]),
+                             cls["intent_label"], cls["intent_summary"], cls["referral_signal"]),
                         )
                         if new.rowcount:
                             STATUS["added"] += 1
@@ -188,7 +176,7 @@ def run_once():
                 log.warning("Web discovery query failed: %s", type(exc).__name__)
             STATUS["checked"] += 1
         with connect() as db:
-            _put(db, "web_cursor", (cursor + STATUS["checked"]) % len(QUERIES))
+            _put(db, "web_cursor", cursor + 1)
             _put(db, "web_last_run", now())
             _put(db, "web_last_added", STATUS["added"])
         for lead_id in candidates:
