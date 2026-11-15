@@ -135,8 +135,11 @@ def stats():
         sources = db.execute("SELECT COUNT(*) FROM sources WHERE enabled=1").fetchone()[0]
         categories = [dict(x) for x in db.execute("SELECT category, COUNT(*) AS count FROM leads GROUP BY category ORDER BY count DESC")]
         opportunities = db.execute("SELECT COUNT(*) FROM leads WHERE intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
+        card_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
+        referral_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND referral_signal='asked' AND intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
     return jsonify(total=total, priority=priority, working=working, wins=wins, sources=sources,
-                   categories=categories, opportunities=opportunities, refresh=dict(STATUS))
+                   categories=categories, opportunities=opportunities, card_requests=card_requests,
+                   referral_requests=referral_requests, refresh=dict(STATUS))
 
 def lead_query_args():
     search = request.args.get("q", "").strip()[:120]
@@ -157,6 +160,8 @@ def lead_query_args():
     if stage in STAGES:
         where.append("l.stage = ?")
         params.append(stage)
+    if request.args.get('referral_only') == '1':
+        where.append("l.referral_signal = 'asked'")
     if request.args.get('only_potential') == '1':
         where.append("l.intent_label = 'potential'")
     return " AND ".join(where), params
@@ -229,8 +234,8 @@ def manual_lead():
     cls = score_text(title, description)
     try:
         with connect() as db:
-            db.execute("""INSERT INTO leads (title,description,url,category,score,reason,created_at,intent_label,intent_summary,scored_version,origin)
-                        VALUES (?,?,?,?,?,?,?,?,?,6,'manual')""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), cls['intent_label'], cls['intent_summary']))
+            db.execute("""INSERT INTO leads (title,description,url,category,score,reason,created_at,intent_label,intent_summary,scored_version,origin,referral_signal)
+                        VALUES (?,?,?,?,?,?,?,?,?,7,'manual',?)""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), cls['intent_label'], cls['intent_summary'], cls['referral_signal']))
     except Exception as exc:
         if "UNIQUE" in str(exc):
             return error("Такая ссылка уже сохранена")
