@@ -16,6 +16,7 @@ from db import connect, get_setting, now
 from notifications import new_opportunities
 from scoring import score_text
 from web_discovery import clean, public_result_url
+from search_catalog import deepseek_plan
 
 log = logging.getLogger(__name__)
 
@@ -27,20 +28,7 @@ ANALYSIS_DAILY_LIMIT = 40
 QUERIES_PER_RUN = 3
 ANALYSES_PER_RUN = 6
 INTERVAL_SECONDS = 6 * 3600
-SEARCH_QUERIES = (
-    '"посоветуйте РКО" ИП форум',
-    '"какой банк выбрать для ИП" обсуждение',
-    '"где открыть расчётный счёт" подскажите',
-    '"ищу банк для ИП" расчётный счёт',
-    '"какую дебетовую карту выбрать" форум',
-    '"хочу оформить дебетовую карту" посоветуйте',
-    '"планирую открыть ООО" банк счёт',
-    '"открыл ИП" "посоветуйте банк"',
-    'site:banki.ru "расчетный счет" "подскажите"',
-    'site:vc.ru "какой банк" "ИП"',
-    'site:hranidengi.com "ИП" "РКО"',
-    '"нужен расчетный счет" "подскажите"',
-)
+
 LOCK = threading.Lock()
 STATUS = {"running": False, "checked": 0, "added": 0, "reviewed": 0,
           "last_run": None, "errors": []}
@@ -144,6 +132,8 @@ def _analyze(title, description):
         "Текст ответа максимум 280 символов, без выдуманных тарифов и гарантий; "
         "если предлагается Альфа-Банк, обозначь партнёрскую связь. "
         "Не предлагай спам, сбор частных данных или автоматическую рассылку. "
+        "Обсуждение получения реферальной ссылки классифицируй как запрос только если автор сам просит приглашение; " 
+        "люди, публикующие свои ссылки или рекламные предложения, не являются потенциальными покупателями. " 
         "Уверенность — оценка классификации, НЕ вероятность покупки."
     )
     data = {"title": title[:250], "description": description[:1100]}
@@ -208,11 +198,12 @@ def analyze_lead(lead_id):
             score = max(65, min(90, score))
         db.execute(
             """UPDATE leads SET ai_verdict=?, ai_confidence=?, ai_reason=?, ai_reply=?,
-               intent_label=?, intent_summary=?, score=?, category=?
+               intent_label=?, intent_summary=?, score=?, category=?,
+               referral_signal=CASE WHEN ?='information' THEN '' ELSE referral_signal END
                WHERE id=? AND ai_verdict=''""",
             (verdict["verdict"], verdict["confidence"], verdict["reason"], verdict["reply"],
              verdict["verdict"], "Предварительная оценка DeepSeek: " + verdict["reason"],
-             score, verdict["category"], lead_id),
+             score, verdict["category"], verdict["verdict"], lead_id),
         )
     return verdict
 
@@ -223,18 +214,18 @@ def run_once():
     STATUS.update(running=True, checked=0, added=0, reviewed=0, errors=[])
     try:
         with connect() as db:
-            cursor = int(_read_setting(db, "deepseek_cursor", "0")) % len(SEARCH_QUERIES)
+            cursor = int(_read_setting(db, "deepseek_cursor", "0"))
         # Uses a date operator supported by DeepSeek Search; results still need
         # manual date/context verification.
         earliest = (datetime.now(timezone.utc) - timedelta(days=14)).date().isoformat()
         candidate_ids = []
         heuristic_notify = []
         stop = False
-        for i in range(QUERIES_PER_RUN):
+        for topic_query in deepseek_plan(cursor):
             if not _reserve("deepseek_search", SEARCH_DAILY_LIMIT):
                 STATUS["errors"].append("Достигнут дневной лимит поиска DeepSeek.")
                 break
-            query = SEARCH_QUERIES[(cursor + i) % len(SEARCH_QUERIES)] + " after:" + earliest
+            query = topic_query + " after:" + earliest
             try:
                 for result in _search(query):
                     url = public_result_url(result.get("url"))
@@ -254,11 +245,11 @@ def run_once():
                         inserted = db.execute(
                             """INSERT OR IGNORE INTO leads
                                (source_id,title,description,url,category,score,reason,created_at,
-                                published_at,intent_label,intent_summary,scored_version,origin)
-                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,6,'deepseek')""",
+                                published_at,intent_label,intent_summary,scored_version,origin,referral_signal)
+                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,7,'deepseek',?)""",
                             (title, description, url, local["category"], local["score"],
                              local["reason"], now(), str(result.get("date") or "")[:120],
-                             local["intent_label"], local["intent_summary"]),
+                             local["intent_label"], local["intent_summary"], local["referral_signal"]),
                         )
                         if inserted.rowcount:
                             STATUS["added"] += 1
@@ -275,7 +266,7 @@ def run_once():
             if stop:
                 break
         with connect() as db:
-            _put_setting(db, "deepseek_cursor", (cursor + STATUS["checked"]) % len(SEARCH_QUERIES))
+            _put_setting(db, "deepseek_cursor", cursor + 1)
             _put_setting(db, "deepseek_last_run", now())
             _put_setting(db, "deepseek_last_added", STATUS["added"])
         # Use spare analysis capacity to re-check earlier RSS/Tavily questions too.
