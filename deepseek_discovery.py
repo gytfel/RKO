@@ -278,6 +278,23 @@ def run_once():
             _put_setting(db, "deepseek_cursor", (cursor + STATUS["checked"]) % len(SEARCH_QUERIES))
             _put_setting(db, "deepseek_last_run", now())
             _put_setting(db, "deepseek_last_added", STATUS["added"])
+        # Use spare analysis capacity to re-check earlier RSS/Tavily questions too.
+        # Never rescore unrelated posts or overwrite manually entered CRM stages.
+        if ai_enabled() and len(candidate_ids) < ANALYSES_PER_RUN:
+            with connect() as db:
+                backlog = db.execute(
+                    """SELECT id FROM leads
+                       WHERE ai_verdict='' AND category IN ('РКО','Регистрация бизнеса','Карты')
+                         AND intent_label IN ('possible','potential')
+                         AND stage IN ('new','review') AND score >= 20
+                       ORDER BY CASE origin WHEN 'deepseek' THEN 0 ELSE 1 END, id DESC
+                       LIMIT 40"""
+                ).fetchall()
+            for row in backlog:
+                if len(candidate_ids) >= ANALYSES_PER_RUN:
+                    break
+                if row["id"] not in candidate_ids:
+                    candidate_ids.append(row["id"])
         to_notify = heuristic_notify[:5]
         for lead_id in candidate_ids:
             verdict = analyze_lead(lead_id)
