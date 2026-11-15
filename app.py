@@ -366,7 +366,7 @@ def deepseek_search_run():
 def export_csv():
     where, params = lead_query_args()
     with connect() as db:
-        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='manual' THEN 'Вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name FROM leads l
+        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='deepseek' THEN 'Поиск в интернете · DeepSeek' WHEN l.origin='manual' THEN 'Вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name FROM leads l
             LEFT JOIN sources s ON s.id=l.source_id WHERE {where} ORDER BY l.score DESC LIMIT 20000""", params).fetchall()
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
