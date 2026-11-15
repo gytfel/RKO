@@ -94,10 +94,33 @@ else
   printf '\nCOOKIE_SECURE=1\n' >> "$ENV_FILE"
 fi
 modified_env=1
-systemctl restart rko-radar.service || die 'Не удалось перезапустить RKO Radar.'
-curl -fsS --max-time 10 -D "$HEADERS" -o /dev/null "http://127.0.0.1:$PORT/login" || die 'Панель не отвечает после обновления cookie.'
-grep -iqE '^set-cookie:.*[; ]Secure' "$HEADERS" || die 'Браузерная сессия пока не защищена флагом Secure.'
-systemctl is-active --quiet rko-radar.service || die 'RKO Radar остановился.'
+systemctl restart rko-radar.service || {
+  journalctl -u rko-radar.service -n 30 --no-pager >&2 || true
+  die 'Не удалось перезапустить RKO Radar.'
+}
+# systemctl restart confirms that the process was started, NOT that Gunicorn
+# has already opened its socket. Wait for a real login response before Caddy changes.
+READY=0
+for attempt in $(seq 1 30); do
+  if curl -fsS --max-time 2 -D "$HEADERS" -o /dev/null "http://127.0.0.1:$PORT/login" 2>/dev/null; then
+    READY=1
+    break
+  fi
+  if ! systemctl is-active --quiet rko-radar.service; then
+    break
+  fi
+  sleep 1
+done
+if [[ "$READY" != 1 ]]; then
+  echo 'RKO Radar не открыл порт после перезапуска. Последние записи службы:' >&2
+  journalctl -u rko-radar.service -n 35 --no-pager >&2 || true
+  die 'Веб-панель не отвечает; возвращаю прежние настройки.'
+fi
+if ! grep -iqE '^set-cookie:.*[; ]Secure' "$HEADERS"; then
+  echo 'Новый вход не устанавливает cookie с флагом Secure.' >&2
+  die 'Проверка безопасной сессии не пройдена; возвращаю прежние настройки.'
+fi
+systemctl is-active --quiet rko-radar.service || die 'Служба RKO Radar остановилась после запуска.'
 msg '3/4. Изменяю только блок RKO в существующем Docker Caddy'
 docker cp "$NEWCFG" "$CONTAINER:/tmp/rko-remember-preview.Caddyfile"
 docker exec "$CONTAINER" caddy validate --config /tmp/rko-remember-preview.Caddyfile --adapter caddyfile || die 'Новая конфигурация Caddy не прошла проверку.'
