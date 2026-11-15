@@ -37,6 +37,25 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/manual', json={}).status_code, 403)
         self.assertTrue(token)
 
+    def test_remember_device(self):
+        self.client.get('/login')
+        with self.client.session_transaction() as s:
+            token = s['csrf']
+        response = self.client.post('/login', data={'csrf': token, 'password': 'test-password-strong-enough', 'remember_device': 'yes'})
+        self.assertEqual(response.status_code, 302)
+        cookie = response.headers.get('Set-Cookie', '')
+        self.assertIn('Max-Age=2592000', cookie)
+        self.assertEqual(self.client.get('/api/stats').status_code, 200)
+
+    def test_login_without_remembering(self):
+        self.client.get('/login')
+        with self.client.session_transaction() as s:
+            token = s['csrf']
+        response = self.client.post('/login', data={'csrf': token, 'password': 'test-password-strong-enough'})
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn('Max-Age=', response.headers.get('Set-Cookie', ''))
+        self.assertEqual(self.client.get('/api/stats').status_code, 200)
+
     def test_lead_flow(self):
         token = self.auth()
         h = {'X-CSRF-Token': token}
