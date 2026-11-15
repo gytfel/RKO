@@ -171,7 +171,7 @@ def run_once():
                             """INSERT OR IGNORE INTO leads
                                (source_id,title,description,url,category,score,reason,created_at,
                                 published_at,intent_label,intent_summary,scored_version,origin)
-                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,5,'web')""",
+                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,6,'web')""",
                             (title, description, url, cls["category"], cls["score"],
                              cls["reason"], now(), str(result.get("published_date") or "")[:120],
                              cls["intent_label"], cls["intent_summary"]),
