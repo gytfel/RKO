@@ -29,12 +29,14 @@ ARTICLES = [
     r'\b(?:инструкци\w*|обзор\w*|дайджест\w*|подборк\w*)\b',
 ]
 HOWTO_TITLE = r'^(?:как|где|какой|что)\s+.{5,100}\s*[:—–-]\s*(?:пошагов|инструкц|обзор|список|советы)'
-# Index results frequently contain SEO comparison pages or old forum threads,
-# and their quoted examples must NOT count as a customer's own request.
+# Indexed results can include SEO articles and old forum threads.
 EDITORIAL_TITLE = [
-    r'^\\s*\\d{1,2}\\s+(?:банков|банка|сервисов|способов|лучших|вариантов)\\b',
-    r'\\b(?:топ[- ]?\\d+|рейтинг|сравнение|обзор|подборка)\\s+(?:банков|рко|счетов|карт|тарифов)\\b',
-    r'^\\s*(?:какой|какие|как|где|что)\\s+[^?]{12,140}[:—–-]\\s*[^?]{12,140}
+    r'^\s*\d{1,2}\s+(?:банков|банка|сервисов|способов|лучших|вариантов)\b',
+    r'\b(?:топ[- ]?\d+|рейтинг|сравнение|обзор|подборка)\s+(?:банков|рко|счетов|карт|тарифов)\b',
+    r'^\s*(?:какой|какие|как|где|что)\s+[^?]{12,140}[:—–-]\s*[^?]{12,140}$',
+]
+PREMIUM_SERVICE = r'\b(?:премиум|premium|премиальн\w*\s+(?:пакет|подписк)|привилеги\w*|продлени\w*\s+премиум)\b'
+CARD_ACQUISITION = r'\b(?:открыть|оформить|выбрать|посоветуйте|подскажите)\s+(?:мне\s+|новую\s+|лучшую\s+|дебетовую\s+|банковскую\s+)*карт\w*\b'
 
 def matches(patterns, text):
     return sum(1 for p in patterns if re.search(p, text, re.I))
