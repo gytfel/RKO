@@ -26,3 +26,16 @@ progress.bar-track{display:block;width:100%;height:7px;border:0;appearance:none;
   .modal-box{max-height:calc(100dvh - 30px);overflow-y:auto}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.nav-link{transition:none}}
+
+/* v6: whole-web discovery controls */
+.web-search-panel{margin:0 0 22px;padding:25px}
+.web-search-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.web-search-head h2{margin:3px 0 8px;font-size:21px}
+.web-search-head p{max-width:700px}
+.web-search-meta{margin:20px 0 10px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.web-search-meta>div{border:1px solid #27344a;background:#101725;border-radius:10px;padding:12px}
+.web-search-meta strong{display:block;color:#e9f0fd;font-size:14px;overflow-wrap:anywhere}
+.web-search-meta span{display:block;font-size:11px;margin-top:4px}
+.web-search-tip{font-size:12px;line-height:1.6}
+.web-search-tip code{color:#cdbfff;overflow-wrap:anywhere}
+@media(max-width:800px){.web-search-head{display:block}.web-search-head .btn{min-height:45px;margin-top:14px}.web-search-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.web-search-panel{padding:18px 15px}}
