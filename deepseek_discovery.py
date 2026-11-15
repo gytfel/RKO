@@ -228,6 +228,7 @@ def run_once():
         # manual date/context verification.
         earliest = (datetime.now(timezone.utc) - timedelta(days=14)).date().isoformat()
         candidate_ids = []
+        heuristic_notify = []
         stop = False
         for i in range(QUERIES_PER_RUN):
             if not _reserve("deepseek_search", SEARCH_DAILY_LIMIT):
@@ -263,6 +264,8 @@ def run_once():
                             STATUS["added"] += 1
                             if ai_enabled() and len(candidate_ids) < ANALYSES_PER_RUN:
                                 candidate_ids.append(inserted.lastrowid)
+                            elif not ai_enabled() and local["intent_label"] == "potential":
+                                heuristic_notify.append({"title": title, "url": url, "score": local["score"]})
             except (requests.RequestException, ValueError, RuntimeError) as exc:
                 STATUS["errors"].append(str(exc)[:150])
                 log.warning("DeepSeek search failure (%s)", type(exc).__name__)
@@ -275,18 +278,7 @@ def run_once():
             _put_setting(db, "deepseek_cursor", (cursor + STATUS["checked"]) % len(SEARCH_QUERIES))
             _put_setting(db, "deepseek_last_run", now())
             _put_setting(db, "deepseek_last_added", STATUS["added"])
-        to_notify = []
-        if not ai_enabled():
-            # Search-only mode: use local conservative classification and no model charges.
-            with connect() as db:
-                rows = db.execute(
-                    """SELECT title,url,score FROM leads
-                       WHERE origin='deepseek' AND created_at >= ?
-                       AND intent_label='potential' ORDER BY id DESC LIMIT 5""",
-                    ((datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec='seconds'),),
-                ).fetchall()
-            # Do not send notifications in search-only mode for old results.
-            # New results still appear in the dashboard and can be reviewed manually.
+        to_notify = heuristic_notify[:5]
         for lead_id in candidate_ids:
             verdict = analyze_lead(lead_id)
             if verdict is not None:
