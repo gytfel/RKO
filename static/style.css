@@ -3,3 +3,26 @@
 progress.bar-track{display:block;width:100%;height:7px;border:0;appearance:none;border-radius:10px;background:#2a354a}progress.bar-track::-webkit-progress-bar{background:#2a354a;border-radius:10px}progress.bar-track::-webkit-progress-value{background:linear-gradient(90deg,#7558ee,#b9a6ff);border-radius:10px}progress.bar-track::-moz-progress-bar{background:linear-gradient(90deg,#7558ee,#b9a6ff);border-radius:10px}
 
 .source-diagnostics{border-top:1px solid #2a364c;padding:22px}.source-diagnostics h3{font-size:15px;margin:0 0 6px}.source-diagnostics>p{font-size:12px;color:#8ea0b8}.health-row{display:flex;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px solid #263247;font-size:12px}.health-row span{color:#a8b8d0;white-space:nowrap}.telegram-panel{padding:24px;max-width:920px;margin-top:18px}.telegram-panel h2{font-size:17px}.telegram-panel code{color:#c8b9ff;word-break:break-all}.telegram-panel p{font-size:12px;line-height:1.7}.telegram-panel .btn{margin-top:12px}@media(max-width:650px){.health-row{flex-direction:column;gap:3px}}
+
+/* v5: mobile-friendly touch targets, compact layout and safe-area support */
+.remember-device{display:flex!important;align-items:flex-start;gap:12px;margin:0 0 22px;cursor:pointer;color:#e5eafe}
+.remember-device input{width:20px!important;height:20px!important;flex:0 0 20px;margin:3px 0 0!important;accent-color:#8d76ff}
+.remember-device span{display:block;line-height:1.45}
+.remember-device strong{display:block;font-size:13px}
+.remember-device small{display:block;color:#96a6bf;font-size:11px;margin-top:4px}
+@media(max-width:780px){
+  .login-page{padding:14px;padding-top:max(14px,env(safe-area-inset-top))}
+  .login-card{padding:22px 18px;box-shadow:0 12px 45px #0007}
+  .login-card input[type=password]{min-height:46px;font-size:16px}
+  .login-card .btn{min-height:46px}
+  .nav{scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+  .nav::-webkit-scrollbar{display:none}
+  .nav-link{min-height:44px;scroll-snap-align:start}
+  .content{padding:19px 13px calc(30px + env(safe-area-inset-bottom))}
+  .topbar{position:sticky;top:0;z-index:12;min-height:56px;padding:9px 13px}
+  .topbar .btn{min-height:42px}
+  .btn,.icon-button{touch-action:manipulation}
+  .lead-controls button,.lead-controls select,.source-buttons button{min-height:42px}
+  .modal-box{max-height:calc(100dvh - 30px);overflow-y:auto}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.nav-link{transition:none}}
