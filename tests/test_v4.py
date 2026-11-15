@@ -39,6 +39,26 @@ class Scoring(unittest.TestCase):
         self.assertEqual(d['category'], 'Карты')
         self.assertNotEqual(d['intent_label'], 'potential')
 
+    def test_web_premium_thread_not_card_lead(self):
+        d = score_text('Премиум Газпромбанк | Страница 95 | Финансовый форум',
+                       'Коллеги, подскажите, пополнил карту на 3000 рублей для продления премиума и получения кешбэка')
+        self.assertNotEqual(d['intent_label'], 'potential')
+
+    def test_editorial_comparison_not_lead(self):
+        d = score_text('Какой банк выбрать для ИП без сотрудников: расчётный счёт, переводы себе и бухгалтерия',
+                       '| Банк и предложение | Обслуживание | Переводы себе | Банк и тарифы |')
+        self.assertNotEqual(d['intent_label'], 'potential')
+
+    def test_numbered_bank_article_not_lead(self):
+        d = score_text('9 банков и сервисов для АУСН в 2026 году: где открыть счёт',
+                       'Модульбанк РКО подойдёт ИП и ООО, которым нужен счёт')
+        self.assertNotEqual(d['intent_label'], 'potential')
+
+    def test_actual_docs_question_remains_candidate(self):
+        d = score_text('Какие документы нужны директору ООО для открытия расчетного счета?',
+                       'Подскажите пожалуйста, какие документы нужны, чтобы открыть расчетный счет в банке для ООО')
+        self.assertEqual(d['intent_label'], 'potential')
+        self.assertEqual(d['category'], 'РКО')
     def test_marketplace_news(self):
         self.assertNotEqual(score_text('Новости Wildberries: обновление тарифов')['intent_label'], 'potential')
 
