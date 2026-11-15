@@ -81,10 +81,10 @@ def rescore_existing(limit=50000):
     from scoring import score_text
     updated = 0
     with connect() as db:
-        rows = db.execute("SELECT id, title, description FROM leads WHERE scored_version < 5 LIMIT ?", (limit,)).fetchall()
+        rows = db.execute("SELECT id, title, description FROM leads WHERE scored_version < 6 AND ai_verdict='' LIMIT ?", (limit,)).fetchall()
         for row in rows:
             value = score_text(row['title'], row['description'])
-            db.execute("""UPDATE leads SET category=?, score=?, reason=?, intent_label=?, intent_summary=?, scored_version=5
+            db.execute("""UPDATE leads SET category=?, score=?, reason=?, intent_label=?, intent_summary=?, scored_version=6
                          WHERE id=?""", (value['category'], value['score'], value['reason'], value['intent_label'], value['intent_summary'], row['id']))
             updated += 1
     return updated
