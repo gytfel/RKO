@@ -20,7 +20,7 @@ STATUS="$(curl --max-time 6 -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1
 
 info '1/4. Адрес сайта'
 PUBLIC_IP="${PUBLIC_IP:-$(curl -4fsS --max-time 10 https://api.ipify.org || true)}"
-[[ "$PUBLIC_IP" =~ ^([0-9]{1,3}\\.){3}[0-9]{1,3}$ ]] || fail 'Не удалось определить публичный IPv4. Запусти: PUBLIC_IP=ВАШ_IP bash /tmp/rko-public-web.sh'
+[[ "$PUBLIC_IP" =~ ^([0-9]{1,3}[.]){3}[0-9]{1,3}$ ]] || fail 'Не удалось определить публичный IPv4. Запусти: PUBLIC_IP=ВАШ_IP bash /tmp/rko-public-web.sh'
 python3 - "$PUBLIC_IP" <<'PY' || fail 'Указан не публичный IPv4.'
 import ipaddress,sys
 assert ipaddress.ip_address(sys.argv[1]).is_global
