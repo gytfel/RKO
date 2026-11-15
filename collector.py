@@ -98,7 +98,7 @@ def run_once():
                         cur = db.execute("""INSERT OR IGNORE INTO leads
                           (source_id,title,description,url,category,score,reason,created_at,published_at,
                            intent_label,intent_summary,scored_version)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,4)""", (source["id"], title, description, url,
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,5)""", (source["id"], title, description, url,
                           cls["category"], cls["score"], cls["reason"], now(), entry.get("published", "")[:120],
                           cls["intent_label"], cls["intent_summary"]))
                         STATUS["added"] += cur.rowcount
