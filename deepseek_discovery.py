@@ -145,6 +145,7 @@ def _analyze(title, description):
     response = _post(CHAT_ENDPOINT, {
         "model": MODEL, "max_tokens": 420,
         "response_format": {"type": "json_object"},
+        "safety_check": {"level": "high"},
         "messages": [
             {"role": "system", "content": instruction},
             {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
