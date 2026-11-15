@@ -1,0 +1,31 @@
+# Server data and credentials
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.bak
+*.tar.gz
+*.zip
+/backup/
+/backups/
+/data/
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+# Editors and OS
+.DS_Store
+.vscode/
+.idea/
