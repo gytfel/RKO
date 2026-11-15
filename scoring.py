@@ -29,6 +29,72 @@ ARTICLES = [
     r'\b(?:инструкци\w*|обзор\w*|дайджест\w*|подборк\w*)\b',
 ]
 HOWTO_TITLE = r'^(?:как|где|какой|что)\s+.{5,100}\s*[:—–-]\s*(?:пошагов|инструкц|обзор|список|советы)'
+# Index results frequently contain SEO comparison pages or old forum threads,
+# and their quoted examples must NOT count as a customer's own request.
+EDITORIAL_TITLE = [
+    r'^\\s*\\d{1,2}\\s+(?:банков|банка|сервисов|способов|лучших|вариантов)\\b',
+    r'\\b(?:топ[- ]?\\d+|рейтинг|сравнение|обзор|подборка)\\s+(?:банков|рко|счетов|карт|тарифов)\\b',
+    r'^\\s*(?:какой|какие|как|где|что)\\s+[^?]{12,140}[:—–-]\\s*[^?]{12,140}
+
+def matches(patterns, text):
+    return sum(1 for p in patterns if re.search(p, text, re.I))
+
+def score_text(title: str, description: str = '') -> dict:
+    heading = unescape(title or '').lower()[:300]
+    body = unescape(description or '').lower()[:2500]
+    text = heading + ' ' + body
+    counts = {name: matches(patterns, text) for name, patterns in TOPICS.items()}
+    # Prioritize RKO/registration when combined with a marketplace or generic card context.
+    category = next((c for c in ('РКО','Регистрация бизнеса') if counts[c] > 0), None)
+    if category is None:
+        category = max(counts, key=counts.get)
+    if counts[category] == 0:
+        return {'category':'Другое','score':0,'reason':'Нет признаков нужной темы', 'intent_label':'information','intent_summary':'Нерелевантная публикация'}
+    strong = matches(STRONG_INTENT, text)
+    # Some RSS feeds include the actual question only in the summary.
+    question = bool(matches(QUESTION, heading)) or ("?" in body and strong > 0)
+    article = matches(ARTICLES, text)
+    howto = bool(re.search(HOWTO_TITLE, heading))
+    editorial = bool(matches(EDITORIAL_TITLE, heading)) or bool(re.search(r'\\|[^\\n]{5,100}\\|[^\\n]{5,100}\\|', body))
+    # A question in a quoted forum reply or an SEO table is not a new
+    # application for a debit card (e.g. extending a premium service).
+    premium_maintenance = (category == 'Карты'
+                           and bool(re.search(PREMIUM_SERVICE, heading))
+                           and not bool(re.search(CARD_ACQUISITION, heading)))
+    # Without a direct request, publication is not an actionable potential customer.
+    personal_request = bool(re.search(
+        r'\b(?:хочу|планирую|собираюсь|собираемся|ищу|выбираю|нужен|нужна|нужно|требуется)\b',
+        heading
+    ))
+    direct = bool(strong and (question or strong >= 2 or personal_request))
+    if article or howto or editorial or premium_maintenance:
+        direct = False
+    # A specific debit-card question can be a lead too. Generic marketplace
+    # mentions and banking news alone are NOT customer requests.
+    financial_product = category in ('РКО','Регистрация бизнеса','Карты')
+    qualified = direct and financial_product
+    score = 14 + min(22, counts[category]*11) + min(32, strong*16) + (20 if question else 0) - min(45, article*20) - (25 if howto else 0)
+    if not financial_product: score -= 20
+    if editorial or premium_maintenance: score = min(score, 25)
+    if not direct: score = min(score, 49)
+    if not qualified: score = min(score, 59)
+    score = max(0, min(100, score))
+    if qualified:
+        intent_label = 'potential'
+        intent_summary = 'Возможно, человек лично выбирает банковский продукт или регистрацию бизнеса'
+    elif article or howto or editorial or premium_maintenance:
+        intent_label = 'information'
+        intent_summary = 'Скорее статья, новость или рекламный материал'
+    else:
+        intent_label = 'possible'
+        intent_summary = 'Тема подходит, но явного намерения оформить продукт не найдено'
+    reasons = [f'Тема: {category}', intent_summary]
+    return {'category':category, 'score':score, 'reason':'; '.join(reasons), 'intent_label':intent_label, 'intent_summary':intent_summary}
+,
+]
+PREMIUM_SERVICE = r'\\b(?:премиум|premium|премиальн\\w*\\s+(?:пакет|подписк)|привилеги\\w*|продлени\\w*\\s+премиум)\\b'
+CARD_ACQUISITION = r'\\b(?:открыть|оформить|выбрать|посоветуйте|подскажите)\\s+(?:мне\\s+|новую\\s+|лучшую\\s+|дебетовую\\s+|банковскую\\s+)*карт\\w*\\b'
+
 
 def matches(patterns, text):
     return sum(1 for p in patterns if re.search(p, text, re.I))
