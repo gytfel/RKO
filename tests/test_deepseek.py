@@ -46,7 +46,7 @@ class DeepSeekTests(unittest.TestCase):
         }
         ai = {"verdict": "potential", "category": "РКО", "confidence": 86,
               "reason": "Личный вопрос", "reply": "Проверьте тарифы и расходы."}
-        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key"}), \
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key", "DEEPSEEK_ANALYZE": "1"}), \
              patch.object(ds, "_search", return_value=[item]) as search, \
              patch.object(ds, "_analyze", return_value=ai) as analyze, \
              patch.object(ds, "new_opportunities") as notify:
@@ -69,7 +69,7 @@ class DeepSeekTests(unittest.TestCase):
             "url": "https://example.org/news",
             "snippet": "Новости и обзор банковских тарифов",
         }
-        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key"}), \
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key", "DEEPSEEK_ANALYZE": "1"}), \
              patch.object(ds, "_search", return_value=[item]), \
              patch.object(ds, "_analyze") as analyze, \
              patch.object(ds, "new_opportunities"):
@@ -77,6 +77,19 @@ class DeepSeekTests(unittest.TestCase):
             self.assertFalse(analyze.called)
             with db.connect() as cx:
                 self.assertEqual(cx.execute("SELECT COUNT(*) FROM leads").fetchone()[0], 0)
+
+    def test_search_only_does_not_call_model(self):
+        item = {"title": "Подскажите, какой банк выбрать для ИП?",
+                "url": "https://example.org/search-only",
+                "summary": "Хочу открыть расчётный счёт для ИП"}
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key", "DEEPSEEK_ANALYZE": "0"}), \
+             patch.object(ds, "_search", return_value=[item]), \
+             patch.object(ds, "_analyze") as analyze, \
+             patch.object(ds, "new_opportunities"):
+            ds.run_once()
+            self.assertFalse(analyze.called)
+            self.assertEqual(ds.status()["analysis_used"], 0)
+            self.assertFalse(ds.status()["ai_enabled"])
 
     def test_budget_never_exceeds_max(self):
         for _ in range(ds.SEARCH_DAILY_LIMIT):
@@ -95,7 +108,7 @@ class DeepSeekTests(unittest.TestCase):
             lead_id = cur.lastrowid
         ai = {"verdict": "information", "category": "РКО", "confidence": 91,
               "reason": "Статья, а не личный запрос", "reply": ""}
-        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key"}), \
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key", "DEEPSEEK_ANALYZE": "1"}), \
              patch.object(ds, "_analyze", return_value=ai):
             ds.analyze_lead(lead_id)
         with db.connect() as cx:
