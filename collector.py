@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from db import connect, get_setting, now
 from scoring import score_text
 from notifications import new_opportunities
-from deepseek_discovery import configured as ai_configured, analyze_lead
+from deepseek_discovery import ai_enabled as ai_configured, analyze_lead
 
 log = logging.getLogger(__name__)
 USER_AGENT = "RKORadar/1.0 (+self-hosted RSS reader; manual-contact-only)"
