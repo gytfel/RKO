@@ -57,7 +57,9 @@ else
   printf 'RKO_WEB_USER=%q\nRKO_WEB_PASS=%q\n' "$RKO_WEB_USER" "$RKO_WEB_PASS" > "$CREDS"
   chmod 600 "$CREDS"
 fi
-PASSWORD_HASH="$(printf '%s\n' "$RKO_WEB_PASS" | caddy hash-password)" || fail 'Не удалось создать хэш пароля.'
+# Pass the password explicitly: some packaged Caddy versions return EOF on piped stdin.
+# The value is not printed or written to the web config; only its bcrypt hash is.
+PASSWORD_HASH="$(caddy hash-password --algorithm bcrypt --plaintext "$RKO_WEB_PASS")" || fail 'Не удалось создать хэш пароля. Проверь: caddy hash-password --help'
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OLD_CADDY=""
 OLD_SITE=""
