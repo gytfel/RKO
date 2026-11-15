@@ -136,9 +136,10 @@ def stats():
         categories = [dict(x) for x in db.execute("SELECT category, COUNT(*) AS count FROM leads GROUP BY category ORDER BY count DESC")]
         opportunities = db.execute("SELECT COUNT(*) FROM leads WHERE intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
         card_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
+        card_signals = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND intent_label IN ('potential','possible') AND stage IN ('new','review')").fetchone()[0]
         referral_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND referral_signal='asked' AND intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
     return jsonify(total=total, priority=priority, working=working, wins=wins, sources=sources,
-                   categories=categories, opportunities=opportunities, card_requests=card_requests,
+                   categories=categories, opportunities=opportunities, card_requests=card_requests, card_signals=card_signals,
                    referral_requests=referral_requests, refresh=dict(STATUS))
 
 def lead_query_args():
@@ -160,6 +161,8 @@ def lead_query_args():
     if stage in STAGES:
         where.append("l.stage = ?")
         params.append(stage)
+    if request.args.get('signals_only') == '1':
+        where.append("l.intent_label IN ('possible','potential')")
     if request.args.get('referral_only') == '1':
         where.append("l.referral_signal = 'asked'")
     if request.args.get('only_potential') == '1':
