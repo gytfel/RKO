@@ -15,6 +15,7 @@ from collector import STATUS, start_refresh, start_worker, validate_public_url
 from db import connect, get_setting, initialize, now, rescore_existing
 from scoring import score_text
 from notifications import configured as notifications_configured, send_message
+from web_discovery import configured as web_configured, status as web_status, start_refresh as web_start_refresh, start_worker as web_start_worker
 
 app = Flask(__name__)
 password = os.getenv("ADMIN_PASSWORD")
@@ -35,6 +36,7 @@ initialize()
 rescore_existing()
 if os.getenv("DISABLE_SCHEDULER", "0") != "1":
     start_worker()
+    web_start_worker()
 
 @app.after_request
 def security_headers(response):
@@ -168,7 +170,7 @@ def leads():
         limit = 30
     with connect() as db:
         count = db.execute(f"SELECT COUNT(*) FROM leads l WHERE {where}", params).fetchone()[0]
-        rows = db.execute(f"""SELECT l.*, COALESCE(s.name,'Добавлено вручную') AS source_name
+        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='manual' THEN 'Добавлено вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name
             FROM leads l LEFT JOIN sources s ON s.id=l.source_id
             WHERE {where} ORDER BY CASE WHEN l.stage='new' THEN 0 ELSE 1 END, l.score DESC, l.created_at DESC
             LIMIT ? OFFSET ?""", params + [limit, (page - 1) * limit]).fetchall()
@@ -222,8 +224,8 @@ def manual_lead():
     cls = score_text(title, description)
     try:
         with connect() as db:
-            db.execute("""INSERT INTO leads (title,description,url,category,score,reason,created_at,intent_label,intent_summary,scored_version)
-                        VALUES (?,?,?,?,?,?,?,?,?,5)""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), cls['intent_label'], cls['intent_summary']))
+            db.execute("""INSERT INTO leads (title,description,url,category,score,reason,created_at,intent_label,intent_summary,scored_version,origin)
+                        VALUES (?,?,?,?,?,?,?,?,?,5,'manual')""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), cls['intent_label'], cls['intent_summary']))
     except Exception as exc:
         if "UNIQUE" in str(exc):
             return error("Такая ссылка уже сохранена")
@@ -321,12 +323,28 @@ def notification_test():
         return error(message, 400)
     return jsonify(ok=True, message=message)
 
+
+@app.route("/api/web-search/status")
+@admin_only
+def web_search_status():
+    return jsonify(web_status())
+
+
+@app.route("/api/web-search/run", methods=["POST"])
+@admin_only
+def web_search_run():
+    if not web_configured():
+        return error("Поиск не подключён. На VPS выполни: sudo rko-radar web setup", 400)
+    if not web_start_refresh():
+        return error("Поиск уже выполняется", 409)
+    return jsonify(ok=True, message="Поиск публичных обсуждений запущен"), 202
+
 @app.route("/api/export")
 @admin_only
 def export_csv():
     where, params = lead_query_args()
     with connect() as db:
-        rows = db.execute(f"""SELECT l.*, COALESCE(s.name,'Вручную') AS source_name FROM leads l
+        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='manual' THEN 'Вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name FROM leads l
             LEFT JOIN sources s ON s.id=l.source_id WHERE {where} ORDER BY l.score DESC LIMIT 20000""", params).fetchall()
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
