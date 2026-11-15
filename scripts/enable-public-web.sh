@@ -57,7 +57,7 @@ else
   printf 'RKO_WEB_USER=%q\nRKO_WEB_PASS=%q\n' "$RKO_WEB_USER" "$RKO_WEB_PASS" > "$CREDS"
   chmod 600 "$CREDS"
 fi
-PASSWORD_HASH="$(printf '%s' "$RKO_WEB_PASS" | caddy hash-password)" || fail 'Не удалось создать хэш пароля.'
+PASSWORD_HASH="$(printf '%s\n' "$RKO_WEB_PASS" | caddy hash-password)" || fail 'Не удалось создать хэш пароля.'
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OLD_CADDY=""
 OLD_SITE=""
