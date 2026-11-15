@@ -55,7 +55,7 @@ $('web-search-btn').addEventListener('click',async()=>{
 
 async function loadDeepSeekStatus(){
   const s=await api('/api/deepseek/status');
-  $('deepseek-state').textContent=s.running?'⏳ Поиск выполняется':(s.configured?'✓ Подключён':'Не подключён');
+  $('deepseek-state').textContent=s.running?'⏳ Поиск выполняется':(s.configured?(s.ai_enabled?'✓ Поиск и анализ ИИ включены':'✓ Поиск включён, ИИ выключен'):'Не подключён');
   $('deepseek-results').textContent=String(s.results);
   $('deepseek-search-budget').textContent=s.search_used+' / '+s.search_limit;
   $('deepseek-ai-budget').textContent=s.analysis_used+' / '+s.analysis_limit;
