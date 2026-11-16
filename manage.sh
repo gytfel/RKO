@@ -118,6 +118,26 @@ PY
       *) echo 'Команды: rko-radar social setup | status | disable' ;;
     esac
     ;;
+  context)
+    case "${2:-status}" in
+      enable)
+        [[ -s /etc/rko-radar-search.env && -s /etc/rko-radar-deepseek.env ]] || { echo "Сначала подключи Tavily и DeepSeek API"; exit 1; }
+        printf "DEEP_CONTEXT=1\n" > /etc/rko-radar-context.env
+        chmod 600 /etc/rko-radar-context.env
+        systemctl restart "$SERVICE"
+        echo '✓ Дополнительный анализ контекста включён. Tavily Extract тратит кредиты (до 8 вызовов/день).'
+        ;;
+      disable)
+        rm -f /etc/rko-radar-context.env
+        systemctl restart "$SERVICE"
+        echo '✓ Дополнительный анализ контекста отключён.'
+        ;;
+      status)
+        [[ -s /etc/rko-radar-context.env ]] && echo 'Дополнительный анализ контекста включён (вызовы Tavily Extract платные).' || echo 'Анализ контекста выключен (по умолчанию).'
+        ;;
+      *) echo 'Команды: rko-radar context enable | disable | status' ;;
+    esac
+    ;;
   upgrade)
     updater="$APP_DIR/../rko-radar-source/scripts/update-vps.sh"
     # Fetch latest updater before pulling app code (first run included).
@@ -161,6 +181,7 @@ RKO Radar — команды управления на VPS:
   rko-radar web setup / status / disable — интернет-поиск через Tavily
   rko-radar deepseek setup / status / disable — поиск и анализ DeepSeek
   rko-radar social setup / status / disable — поиск Telegram TGStat и VK сообществ
+  rko-radar context enable / disable / status — платный расширенный контекст (по умолчанию выключен)
   rko-radar upgrade   — обновить с GitHub (без загрузки файлов вручную)
   rko-radar update /путь/к/файлу.sh — установить обновление
 TXT
