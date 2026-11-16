@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from db import connect, get_setting, now
 from scoring import score_text
+from freshness import normalize_published_date, fresh_publication
 from notifications import new_opportunities
 from deepseek_discovery import ai_enabled as ai_configured, analyze_lead
 
@@ -95,13 +96,18 @@ def run_once():
                         continue
                     title = clean_text(entry.get("title", ""), 250) or "Без названия"
                     description = clean_text(entry.get("summary", "") or entry.get("description", ""))
+                    # RSS feed activity/collection time is NOT the original post date.
+                    published_raw = str(entry.get("published") or "")[:120]
+                    if not fresh_publication(published_raw, url):
+                        continue
+                    published_on = normalize_published_date(published_raw)
                     cls = score_text(title, description)
                     with connect() as db:
                         cur = db.execute("""INSERT OR IGNORE INTO leads
-                          (source_id,title,description,url,category,score,reason,created_at,published_at,
+                          (source_id,title,description,url,category,score,reason,created_at,published_at,published_on,
                            intent_label,intent_summary,scored_version,referral_signal)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,7,?)""", (source["id"], title, description, url,
-                          cls["category"], cls["score"], cls["reason"], now(), entry.get("published", "")[:120],
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,7,?)""", (source["id"], title, description, url,
+                          cls["category"], cls["score"], cls["reason"], now(), published_raw, published_on,
                           cls["intent_label"], cls["intent_summary"], cls["referral_signal"]))
                         STATUS["added"] += cur.rowcount
                         if cur.rowcount:
