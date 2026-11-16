@@ -15,6 +15,7 @@ import requests
 from db import connect, get_setting, now
 from notifications import new_opportunities
 from scoring import score_text
+from freshness import normalize_published_date, date_status, old_year_in_url, window_bounds
 from web_discovery import clean, public_result_url
 from search_catalog import deepseek_plan
 
@@ -30,7 +31,7 @@ ANALYSES_PER_RUN = 6
 INTERVAL_SECONDS = 6 * 3600
 
 LOCK = threading.Lock()
-STATUS = {"running": False, "checked": 0, "added": 0, "reviewed": 0, "received": 0, "filtered": 0, "duplicates": 0,
+STATUS = {"running": False, "checked": 0, "added": 0, "reviewed": 0, "received": 0, "filtered": 0, "duplicates": 0, "stale": 0, "undated": 0,
           "last_run": None, "errors": []}
 CATEGORIES = ("РКО", "Регистрация бизнеса", "Карты")
 VERDICTS = ("potential", "possible", "information")
@@ -82,6 +83,8 @@ def status():
         received = int(_read_setting(db, "deepseek_last_received", "0"))
         excluded = int(_read_setting(db, "deepseek_last_filtered", "0"))
         duplicates = int(_read_setting(db, "deepseek_last_duplicates", "0"))
+        stale = int(_read_setting(db, "deepseek_last_stale", "0"))
+        undated = int(_read_setting(db, "deepseek_last_undated", "0"))
     return {
         "configured": configured(), "ai_enabled": ai_enabled(), "running": STATUS["running"],
         "last_run": last or None, "added": STATUS["added"] if STATUS["running"] else added,
@@ -90,6 +93,9 @@ def status():
         "received": STATUS["received"] if STATUS["running"] else received,
         "filtered": STATUS["filtered"] if STATUS["running"] else excluded,
         "duplicates": STATUS["duplicates"] if STATUS["running"] else duplicates,
+        "stale": STATUS["stale"] if STATUS["running"] else stale,
+        "undated": STATUS["undated"] if STATUS["running"] else undated,
+        "fresh_days": 7,
         "search_used": _used_today("deepseek_search"), "search_limit": SEARCH_DAILY_LIMIT,
         "analysis_used": _used_today("deepseek_ai"), "analysis_limit": ANALYSIS_DAILY_LIMIT,
         "errors": list(STATUS["errors"])[:3], "interval_hours": 6,
@@ -180,9 +186,12 @@ def analyze_lead(lead_id):
         return None
     with connect() as db:
         row = db.execute(
-            "SELECT id,title,description,category,ai_verdict FROM leads WHERE id=?", (lead_id,)
+            "SELECT id,title,description,category,ai_verdict,published_on FROM leads WHERE id=?", (lead_id,)
         ).fetchone()
     if not row or row["ai_verdict"] or row["category"] not in CATEGORIES:
+        return None
+    start, end = window_bounds()
+    if not (start <= row["published_on"] <= end):
         return None
     if not _reserve("deepseek_ai", ANALYSIS_DAILY_LIMIT):
         return None
@@ -217,13 +226,13 @@ def analyze_lead(lead_id):
 def run_once():
     if not configured() or not LOCK.acquire(blocking=False):
         return False
-    STATUS.update(running=True, checked=0, added=0, reviewed=0, received=0, filtered=0, duplicates=0, errors=[])
+    STATUS.update(running=True, checked=0, added=0, reviewed=0, received=0, filtered=0, duplicates=0, stale=0, undated=0, errors=[])
     try:
         with connect() as db:
             cursor = int(_read_setting(db, "deepseek_cursor", "0"))
         # Uses a date operator supported by DeepSeek Search; results still need
         # manual date/context verification.
-        earliest = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+        earliest = (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat()
         candidate_ids = []
         heuristic_notify = []
         stop = False
@@ -245,6 +254,13 @@ def run_once():
                     if not title:
                         STATUS["filtered"] += 1
                         continue
+                    publication_raw = str(result.get("date") or "")[:120]
+                    publication = normalize_published_date(publication_raw)
+                    freshness = date_status(publication_raw)
+                    if freshness != "fresh" or old_year_in_url(url):
+                        STATUS["filtered"] += 1
+                        STATUS["stale" if freshness == "stale" or old_year_in_url(url) else "undated"] += 1
+                        continue
                     local = score_text(title, description)
                     if local["category"] not in CATEGORIES or local["intent_label"] == "information":
                         STATUS["filtered"] += 1
@@ -257,10 +273,10 @@ def run_once():
                         inserted = db.execute(
                             """INSERT OR IGNORE INTO leads
                                (source_id,title,description,url,category,score,reason,created_at,
-                                published_at,intent_label,intent_summary,scored_version,origin,referral_signal)
-                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,7,'deepseek',?)""",
+                                published_at,published_on,intent_label,intent_summary,scored_version,origin,referral_signal)
+                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,7,'deepseek',?)""",
                             (title, description, url, local["category"], local["score"],
-                             local["reason"], now(), str(result.get("date") or "")[:120],
+                             local["reason"], now(), publication_raw, publication,
                              local["intent_label"], local["intent_summary"], local["referral_signal"]),
                         )
                         if inserted.rowcount:
@@ -286,6 +302,8 @@ def run_once():
             _put_setting(db, "deepseek_last_received", STATUS["received"])
             _put_setting(db, "deepseek_last_filtered", STATUS["filtered"])
             _put_setting(db, "deepseek_last_duplicates", STATUS["duplicates"])
+            _put_setting(db, "deepseek_last_stale", STATUS["stale"])
+            _put_setting(db, "deepseek_last_undated", STATUS["undated"])
         # Use spare analysis capacity to re-check earlier RSS/Tavily questions too.
         # Never rescore unrelated posts or overwrite manually entered CRM stages.
         if ai_enabled() and len(candidate_ids) < ANALYSES_PER_RUN:
@@ -295,8 +313,9 @@ def run_once():
                        WHERE ai_verdict='' AND category IN ('РКО','Регистрация бизнеса','Карты')
                          AND intent_label IN ('possible','potential')
                          AND stage IN ('new','review') AND score >= 20
+                         AND published_on >= ? AND published_on <= ?
                        ORDER BY CASE origin WHEN 'deepseek' THEN 0 ELSE 1 END, id DESC
-                       LIMIT 40"""
+                       LIMIT 40""", window_bounds()
                 ).fetchall()
             for row in backlog:
                 if len(candidate_ids) >= ANALYSES_PER_RUN:
