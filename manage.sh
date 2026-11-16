@@ -100,6 +100,24 @@ PY
       *) echo 'Команды: rko-radar deepseek setup | status | disable' ;;
     esac
     ;;
+  social)
+    case "${2:-status}" in
+      setup)
+        python3 "$APP_DIR/social_setup.py"
+        systemctl restart "$SERVICE"
+        echo '✓ Публичные источники Telegram/VK подключены.'
+        ;;
+      status)
+        [[ ! -s /etc/rko-radar-social.env ]] && echo 'Социальные API не настроены. Команда: sudo rko-radar social setup' || echo 'Настройки социальных API есть (токены не показываются).'
+        ;;
+      disable)
+        rm -f /etc/rko-radar-social.env
+        systemctl restart "$SERVICE"
+        echo '✓ Социальный мониторинг отключён, публикации сохранены.'
+        ;;
+      *) echo 'Команды: rko-radar social setup | status | disable' ;;
+    esac
+    ;;
   upgrade)
     updater="$APP_DIR/../rko-radar-source/scripts/update-vps.sh"
     # Fetch latest updater before pulling app code (first run included).
@@ -142,6 +160,7 @@ RKO Radar — команды управления на VPS:
   rko-radar telegram disable — отключить уведомления
   rko-radar web setup / status / disable — интернет-поиск через Tavily
   rko-radar deepseek setup / status / disable — поиск и анализ DeepSeek
+  rko-radar social setup / status / disable — поиск Telegram TGStat и VK сообществ
   rko-radar upgrade   — обновить с GitHub (без загрузки файлов вручную)
   rko-radar update /путь/к/файлу.sh — установить обновление
 TXT
