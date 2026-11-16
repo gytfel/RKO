@@ -11,7 +11,7 @@ APP='/opt/rko-radar'
 DATA='/var/lib/rko-radar'
 SERVICE='rko-radar.service'
 BKDIR='/root/rko-radar-backups'
-NEW_FILES=(app.py collector.py db.py scoring.py notifications.py telegram_setup.py web_discovery.py freshness.py search_catalog.py web_setup.py deepseek_discovery.py deepseek_setup.py social_discovery.py social_setup.py requirements.txt)
+NEW_FILES=(app.py collector.py db.py scoring.py notifications.py telegram_setup.py web_discovery.py freshness.py search_catalog.py web_setup.py deepseek_discovery.py deepseek_setup.py social_discovery.py social_setup.py deep_context.py requirements.txt)
 
 fail() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
 msg() { printf '\n== %s ==\n' "$*"; }
@@ -45,7 +45,7 @@ for f in "${NEW_FILES[@]}"; do [[ -f "$CHECKOUT/$f" ]] || fail "В репози�
 [[ -f "$CHECKOUT/manage.sh" && -f "$CHECKOUT/templates/login.html" && -f "$CHECKOUT/static/app.js" ]] || fail 'Неполный код веб-интерфейса.'
 
 msg '2/5. Проверка кода и зависимостей'
-"$APP/.venv/bin/python" -m compileall -q "$CHECKOUT/app.py" "$CHECKOUT/collector.py" "$CHECKOUT/db.py" "$CHECKOUT/scoring.py" "$CHECKOUT/notifications.py" "$CHECKOUT/telegram_setup.py" "$CHECKOUT/web_discovery.py" "$CHECKOUT/freshness.py" "$CHECKOUT/search_catalog.py" "$CHECKOUT/web_setup.py" "$CHECKOUT/deepseek_discovery.py" "$CHECKOUT/deepseek_setup.py" "$CHECKOUT/social_discovery.py" "$CHECKOUT/social_setup.py" || fail 'Ошибка синтаксиса Python.'
+"$APP/.venv/bin/python" -m compileall -q "$CHECKOUT/app.py" "$CHECKOUT/collector.py" "$CHECKOUT/db.py" "$CHECKOUT/scoring.py" "$CHECKOUT/notifications.py" "$CHECKOUT/telegram_setup.py" "$CHECKOUT/web_discovery.py" "$CHECKOUT/freshness.py" "$CHECKOUT/search_catalog.py" "$CHECKOUT/web_setup.py" "$CHECKOUT/deepseek_discovery.py" "$CHECKOUT/deepseek_setup.py" "$CHECKOUT/social_discovery.py" "$CHECKOUT/social_setup.py" "$CHECKOUT/deep_context.py" || fail 'Ошибка синтаксиса Python.'
 "$APP/.venv/bin/python" -m pip install --disable-pip-version-check -q -r "$CHECKOUT/requirements.txt" || fail 'Ошибка установки зависимостей; действующий сервер не остановлен.'
 
 TMP="$(mktemp -d /root/rko-github-update.XXXXXXXX)"
@@ -89,6 +89,7 @@ BACKUP_ITEMS=(var/lib/rko-radar etc/rko-radar.env)
 [[ ! -f /etc/rko-radar-search.env ]] || BACKUP_ITEMS+=(etc/rko-radar-search.env)
 [[ ! -f /etc/rko-radar-deepseek.env ]] || BACKUP_ITEMS+=(etc/rko-radar-deepseek.env)
 [[ ! -f /etc/rko-radar-social.env ]] || BACKUP_ITEMS+=(etc/rko-radar-social.env)
+[[ ! -f /etc/rko-radar-context.env ]] || BACKUP_ITEMS+=(etc/rko-radar-context.env)
 tar -czf "$BACKUP" -C / "${BACKUP_ITEMS[@]}" || fail 'Не удалось создать резервную копию.'
 chmod 600 "$BACKUP"
 
@@ -109,6 +110,7 @@ EnvironmentFile=-/etc/rko-radar-notify.env
 EnvironmentFile=-/etc/rko-radar-search.env
 EnvironmentFile=-/etc/rko-radar-deepseek.env
 EnvironmentFile=-/etc/rko-radar-social.env
+EnvironmentFile=-/etc/rko-radar-context.env
 SYSTEMD
 systemctl daemon-reload
 systemctl start "$SERVICE" || fail 'Служба не запустилась.'
