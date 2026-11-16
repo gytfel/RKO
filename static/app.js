@@ -38,7 +38,7 @@ async function show(view){
       :'Все записи, включая статьи и новости.';
     await loadLeads();
   }
-  if(view==='sources')await Promise.all([loadSources(),loadWebStatus(),loadDeepSeekStatus()]);
+  if(view==='sources')await Promise.all([loadSources(),loadWebStatus(),loadDeepSeekStatus(),loadSocialStatus()]);
   if(view==='settings')await loadSettings();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -82,6 +82,40 @@ $('web-search-btn').addEventListener('click',async()=>{
   }catch(e){b.disabled=false;toast(e.message,true);}
 });
 
+
+
+async function loadSocialStatus(){
+  const s=await api('/api/social/status');
+  $('social-state').textContent=s.running?'⏳ Проверка выполняется':(s.configured?'✓ Мониторинг подключён':'Не настроен');
+  $('social-results').textContent=s.results;
+  $('social-tg-budget').textContent=s.tgstat_configured?(s.tg_used+' / '+s.tg_limit):'Не подключён';
+  $('social-vk-budget').textContent=s.vk_configured?(s.vk_used+' / '+s.vk_limit):'Не подключён';
+  $('social-diagnostics').textContent=s.last_run
+    ?'Последний запуск: получено '+s.received+' · добавлено '+s.added+' · отклонено '+s.filtered+' · дубли '+s.duplicates+' · VK сообществ '+s.communities
+    :'Проверка раз в час по последним 7 дням; VK сообществ настроено: '+s.communities;
+  if(s.errors?.length)$('social-diagnostics').textContent+=' · Предупреждение: '+s.errors[0];
+  $('social-btn').disabled=!s.configured||s.running;
+  return s;
+}
+$('social-btn').addEventListener('click',async()=>{
+  const b=$('social-btn');b.disabled=true;
+  try{
+    const before=await loadSocialStatus();
+    const response=await api('/api/social/run',{method:'POST',body:{}});
+    toast(response.message);
+    let tries=0;
+    const interval=setInterval(async()=>{
+      try{
+        const s=await loadSocialStatus();
+        if((s.last_run && s.last_run!==before.last_run)||++tries>=40){
+          clearInterval(interval);
+          if(state.view==='sources')await loadSources();
+          toast(s.errors?.length?s.errors[0]:'Соцсети: добавлено '+s.added,!!s.errors?.length);
+        }
+      }catch(e){clearInterval(interval);b.disabled=false;toast(e.message,true);}
+    },3000);
+  }catch(e){b.disabled=false;toast(e.message,true);}
+});
 
 async function loadDeepSeekStatus(){
   const s=await api('/api/deepseek/status');
