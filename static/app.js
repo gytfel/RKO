@@ -123,6 +123,7 @@ async function loadDeepSeekStatus(){
   $('deepseek-results').textContent=String(s.results);
   $('deepseek-search-budget').textContent=s.search_used+' / '+s.search_limit;
   $('deepseek-ai-budget').textContent=s.analysis_used+' / '+s.analysis_limit;
+  $('context-state').textContent=s.context_enabled?'✓ Контекстный анализ включён · Tavily Extract '+s.context_used+' / '+s.context_limit+' за сутки':'Контекстный анализ выключен. Включение только на VPS.';
   $('deepseek-help').classList.toggle('hidden',s.configured);
   $('deepseek-diagnostics').textContent=s.last_run?'Последний запуск: получено '+s.received+' страниц · добавлено '+s.added+' · исключено '+s.filtered+' (старые '+s.stale+', без даты '+s.undated+') · дубли '+s.duplicates:'После первой проверки здесь появится статистика результатов API.';
   $('deepseek-btn').disabled=!s.configured||s.running||s.search_used>=s.search_limit;
