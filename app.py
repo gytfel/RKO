@@ -17,6 +17,8 @@ from scoring import score_text
 from freshness import window_bounds, normalize_published_date
 from notifications import configured as notifications_configured, send_message
 from web_discovery import configured as web_configured, status as web_status, start_refresh as web_start_refresh, start_worker as web_start_worker
+from social_discovery import (configured as social_configured, status as social_status,
+                              start_refresh as social_start_refresh, start_worker as social_start_worker)
 from deepseek_discovery import (
     configured as deepseek_configured, status as deepseek_status,
     start_refresh as deepseek_start_refresh, start_worker as deepseek_start_worker,
@@ -43,6 +45,7 @@ if os.getenv("DISABLE_SCHEDULER", "0") != "1":
     start_worker()
     web_start_worker()
     deepseek_start_worker()
+    social_start_worker()
 
 @app.after_request
 def security_headers(response):
@@ -188,7 +191,7 @@ def leads():
         limit = 30
     with connect() as db:
         count = db.execute(f"SELECT COUNT(*) FROM leads l WHERE {where}", params).fetchone()[0]
-        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='deepseek' THEN 'Поиск в интернете · DeepSeek' WHEN l.origin='manual' THEN 'Добавлено вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name
+        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='deepseek' THEN 'Поиск в интернете · DeepSeek' WHEN l.origin='tgstat' THEN 'Telegram · TGStat' WHEN l.origin='vk' THEN 'VK · публичное сообщество' WHEN l.origin='tgstat' THEN 'Telegram · TGStat' WHEN l.origin='vk' THEN 'VK · публичное сообщество' WHEN l.origin='manual' THEN 'Добавлено вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name
             FROM leads l LEFT JOIN sources s ON s.id=l.source_id
             WHERE {where} ORDER BY CASE WHEN l.stage='new' THEN 0 ELSE 1 END, l.score DESC, l.created_at DESC
             LIMIT ? OFFSET ?""", params + [limit, (page - 1) * limit]).fetchall()
@@ -376,6 +379,22 @@ def deepseek_search_run():
     if not deepseek_start_refresh():
         return error("Поиск уже выполняется или дневной лимит исчерпан.", 409)
     return jsonify(ok=True, message="Поиск через DeepSeek запущен."), 202
+
+
+@app.route("/api/social/status")
+@admin_only
+def social_discovery_status():
+    return jsonify(social_status())
+
+
+@app.route("/api/social/run", methods=["POST"])
+@admin_only
+def social_discovery_run():
+    if not social_configured():
+        return error("Сначала подключи TGStat или VK на VPS: sudo rko-radar social setup", 400)
+    if not social_start_refresh():
+        return error("Мониторинг уже запущен", 409)
+    return jsonify(ok=True, message="Начат поиск по публичным VK/Telegram источникам"), 202
 
 
 @app.route("/api/export")
