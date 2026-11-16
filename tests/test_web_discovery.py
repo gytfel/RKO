@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
+from datetime import datetime, timezone
 
 class WebDiscoveryTests(unittest.TestCase):
     def setUp(self):
@@ -40,7 +41,7 @@ class WebDiscoveryTests(unittest.TestCase):
             "title": "Подскажите, какой банк выбрать для ИП?",
             "url": "https://example.org/forum/thread-42",
             "content": "Хочу открыть расчётный счёт для нового ИП, посоветуйте РКО",
-            "published_date": "2026-11-15",
+            "published_date": datetime.now(timezone.utc).date().isoformat(),
         }
         with patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test-key"}):
             with patch.object(web_discovery, "_search", return_value=[result]) as search:
@@ -66,6 +67,24 @@ class WebDiscoveryTests(unittest.TestCase):
                     web_discovery.run_once()
                     with db.connect() as cx:
                         self.assertEqual(cx.execute("SELECT COUNT(*) FROM leads").fetchone()[0], 0)
+
+
+    def test_four_year_old_and_unknown_dates_rejected(self):
+        ancient = {
+            "title": "Подскажите, какой банк выбрать для ИП?",
+            "url": "https://example.org/forum/ancient",
+            "content": "Хочу открыть расчётный счёт",
+            "published_date": "2022-11-15",
+        }
+        unknown = dict(ancient, url="https://example.org/forum/unknown", published_date="")
+        with patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test-key"}), \
+             patch.object(web_discovery, "_search", return_value=[ancient, unknown]), \
+             patch.object(web_discovery, "new_opportunities"):
+            web_discovery.run_once()
+        with db.connect() as cx:
+            self.assertEqual(cx.execute("SELECT COUNT(*) FROM leads").fetchone()[0], 0)
+        self.assertEqual(web_discovery.status()["stale"], 5)
+        self.assertEqual(web_discovery.status()["undated"], 5)
 
     def test_daily_budget_cap(self):
         with db.connect() as cx:
