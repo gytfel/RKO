@@ -2,6 +2,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 class ApiTests(unittest.TestCase):
     @classmethod
@@ -72,7 +73,8 @@ class ApiTests(unittest.TestCase):
         h = {'X-CSRF-Token':token}
         example = {'title': 'Ищу реферальную ссылку на дебетовую карту Альфа-Банка',
                    'url': 'https://example.com/discussion/referral-applicant-2026',
-                   'description': 'Хочу оформить карту по приглашению, подскажите'}
+                   'description': 'Хочу оформить карту по приглашению, подскажите',
+                   'published_at': datetime.now(timezone.utc).date().isoformat()}
         response = self.client.post('/api/manual', json=example, headers=h)
         self.assertEqual(response.status_code, 201)
         stats = self.client.get('/api/stats').get_json()
@@ -85,13 +87,32 @@ class ApiTests(unittest.TestCase):
         token = self.auth()
         example = {'title': 'Дебетовая карта для покупок и кешбэка',
                    'url': 'https://example.com/discussion/card-review-nonlead-2026',
-                   'description': 'Обсуждение полезных тарифов без явного запроса оформить карту'}
+                   'description': 'Обсуждение полезных тарифов без явного запроса оформить карту',
+                   'published_at': datetime.now(timezone.utc).date().isoformat()}
         response = self.client.post('/api/manual', json=example, headers={'X-CSRF-Token':token})
         self.assertEqual(response.status_code, 201)
         signal_rows = self.client.get('/api/leads?category=Карты&signals_only=1&min_score=0').get_json()['items']
         opportunity_rows = self.client.get('/api/leads?category=Карты&only_potential=1&min_score=0').get_json()['items']
         self.assertTrue(any(x['url']==example['url'] for x in signal_rows))
         self.assertFalse(any(x['url']==example['url'] for x in opportunity_rows))
+
+
+    def test_old_and_undated_manual_posts_only_in_archive(self):
+        token = self.auth()
+        h = {'X-CSRF-Token': token}
+        for suffix, pub in [('old', '2022-03-10'), ('undated', '')]:
+            item = {'title': 'Подскажите, какую дебетовую карту выбрать?',
+                    'description': 'Хочу оформить дебетовую карту',
+                    'url': 'https://example.com/discussion/date-test-'+suffix,
+                    'published_at': pub}
+            response = self.client.post('/api/manual', json=item, headers=h)
+            self.assertEqual(response.status_code, 201)
+            archive = self.client.get('/api/leads?min_score=0').get_json()['items']
+            self.assertTrue(any(x['url'] == item['url'] for x in archive))
+            fresh = self.client.get('/api/leads?only_potential=1&min_score=0').get_json()['items']
+            self.assertFalse(any(x['url'] == item['url'] for x in fresh))
+            signal = self.client.get('/api/leads?signals_only=1&category=Карты&min_score=0').get_json()['items']
+            self.assertFalse(any(x['url'] == item['url'] for x in signal))
 
     def test_prohibited_internal_source(self):
         token = self.auth()
