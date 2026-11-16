@@ -2,6 +2,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from freshness import normalize_published_date
 
 DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
 DB_FILE = os.path.join(DATA_DIR, "radar.sqlite3")
@@ -66,6 +67,18 @@ def initialize():
                 db.execute(f"ALTER TABLE leads ADD COLUMN {name} {definition}")
         if "referral_signal" not in columns:
             db.execute("ALTER TABLE leads ADD COLUMN referral_signal TEXT NOT NULL DEFAULT ''")
+        if "published_on" not in columns:
+            db.execute("ALTER TABLE leads ADD COLUMN published_on TEXT NOT NULL DEFAULT ''")
+        # One-time backfill for existing sources. Do not turn insertion/collection time
+        # into publication time: unknown dates must remain unverified.
+        backfilled = db.execute("SELECT value FROM settings WHERE key='published_on_backfill_v1'").fetchone()
+        if not backfilled:
+            for r in db.execute("SELECT id, published_at FROM leads WHERE published_at IS NOT NULL AND published_at != ''"):
+                date_value = normalize_published_date(r["published_at"])
+                if date_value:
+                    db.execute("UPDATE leads SET published_on=? WHERE id=?", (date_value, r["id"]))
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES ('published_on_backfill_v1','1')")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_leads_publication ON leads(published_on, intent_label)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_leads_origin ON leads(origin, created_at DESC)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_leads_referral ON leads(referral_signal, intent_label)")
         db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('poll_minutes','60')")
