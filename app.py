@@ -14,6 +14,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from collector import STATUS, start_refresh, start_worker, validate_public_url
 from db import connect, get_setting, initialize, now, rescore_existing
 from scoring import score_text
+from freshness import window_bounds, normalize_published_date
 from notifications import configured as notifications_configured, send_message
 from web_discovery import configured as web_configured, status as web_status, start_refresh as web_start_refresh, start_worker as web_start_worker
 from deepseek_discovery import (
@@ -127,20 +128,21 @@ def dashboard():
 @app.route("/api/stats")
 @admin_only
 def stats():
+    recent = window_bounds()
     with connect() as db:
         total = db.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
-        priority = db.execute("SELECT COUNT(*) FROM leads WHERE score>=65 AND stage IN ('new','review')").fetchone()[0]
+        priority = db.execute("SELECT COUNT(*) FROM leads WHERE score>=65 AND stage IN ('new','review') AND published_on BETWEEN ? AND ?", recent).fetchone()[0]
         working = db.execute("SELECT COUNT(*) FROM leads WHERE stage IN ('review','contacted')").fetchone()[0]
         wins = db.execute("SELECT COUNT(*) FROM leads WHERE stage='won'").fetchone()[0]
         sources = db.execute("SELECT COUNT(*) FROM sources WHERE enabled=1").fetchone()[0]
         categories = [dict(x) for x in db.execute("SELECT category, COUNT(*) AS count FROM leads GROUP BY category ORDER BY count DESC")]
-        opportunities = db.execute("SELECT COUNT(*) FROM leads WHERE intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
-        card_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
-        card_signals = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND intent_label IN ('potential','possible') AND stage IN ('new','review')").fetchone()[0]
-        referral_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND referral_signal='asked' AND intent_label='potential' AND stage IN ('new','review')").fetchone()[0]
+        opportunities = db.execute("SELECT COUNT(*) FROM leads WHERE intent_label='potential' AND stage IN ('new','review') AND published_on BETWEEN ? AND ?", recent).fetchone()[0]
+        card_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND intent_label='potential' AND stage IN ('new','review') AND published_on BETWEEN ? AND ?", recent).fetchone()[0]
+        card_signals = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND intent_label IN ('potential','possible') AND stage IN ('new','review') AND published_on BETWEEN ? AND ?", recent).fetchone()[0]
+        referral_requests = db.execute("SELECT COUNT(*) FROM leads WHERE category='Карты' AND referral_signal='asked' AND intent_label='potential' AND stage IN ('new','review') AND published_on BETWEEN ? AND ?", recent).fetchone()[0]
     return jsonify(total=total, priority=priority, working=working, wins=wins, sources=sources,
                    categories=categories, opportunities=opportunities, card_requests=card_requests, card_signals=card_signals,
-                   referral_requests=referral_requests, refresh=dict(STATUS))
+                   referral_requests=referral_requests, fresh_days=7, refresh=dict(STATUS))
 
 def lead_query_args():
     search = request.args.get("q", "").strip()[:120]
@@ -167,6 +169,9 @@ def lead_query_args():
         where.append("l.referral_signal = 'asked'")
     if request.args.get('only_potential') == '1':
         where.append("l.intent_label = 'potential'")
+    if any(request.args.get(flag) == '1' for flag in ('only_potential','signals_only','referral_only')):
+        where.append("l.published_on BETWEEN ? AND ?")
+        params.extend(window_bounds())
     return " AND ".join(where), params
 
 @app.route("/api/leads")
@@ -235,10 +240,14 @@ def manual_lead():
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         return error("Нужна публичная HTTPS-ссылка на обсуждение")
     cls = score_text(title, description)
+    # Manual entries can be saved without a date, but must not appear among
+    # fresh leads until the operator supplies a verified publication date.
+    published_raw = str(data.get("published_at") or "")[:120]
+    published_on = normalize_published_date(published_raw)
     try:
         with connect() as db:
-            db.execute("""INSERT INTO leads (title,description,url,category,score,reason,created_at,intent_label,intent_summary,scored_version,origin,referral_signal)
-                        VALUES (?,?,?,?,?,?,?,?,?,7,'manual',?)""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), cls['intent_label'], cls['intent_summary'], cls['referral_signal']))
+            db.execute("""INSERT INTO leads (title,description,url,category,score,reason,created_at,published_at,published_on,intent_label,intent_summary,scored_version,origin,referral_signal)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,7,'manual',?)""", (title, description, url, cls["category"], cls["score"], cls["reason"], now(), published_raw, published_on, cls['intent_label'], cls['intent_summary'], cls['referral_signal']))
     except Exception as exc:
         if "UNIQUE" in str(exc):
             return error("Такая ссылка уже сохранена")
