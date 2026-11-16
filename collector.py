@@ -68,8 +68,8 @@ def fetch_feed(url):
 def clean_text(value, limit=1300):
     return BeautifulSoup(value or "", "html.parser").get_text(" ", strip=True)[:limit]
 
-POST_ANCHOR = re.compile(r"^(?:post|message|comment)[-_]?(?:\\d{1,18})$", re.I)
-POST_PATH = re.compile(r"/(?:posts|messages|comments)/\\d+(?:/|$)", re.I)
+POST_ANCHOR = re.compile(r"^(?:post|message|comment)[-_]?(?:\d{1,18})$", re.I)
+POST_PATH = re.compile(r"/(?:posts|messages|comments)/\d+(?:/|$)", re.I)
 
 def reply_permalink(link):
     try:
