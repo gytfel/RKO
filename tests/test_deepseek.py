@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
+from datetime import datetime, timezone
 
 
 class DeepSeekTests(unittest.TestCase):
@@ -42,7 +43,7 @@ class DeepSeekTests(unittest.TestCase):
             "title": "Подскажите, какой банк выбрать для ИП?",
             "url": "https://example.org/t/12?utm_source=news",
             "summary": "Хочу открыть расчётный счёт для нового ИП. Посоветуйте РКО.",
-            "date": "2026-11-15T10:00:00+00:00",
+            "date": datetime.now(timezone.utc).isoformat(),
         }
         ai = {"verdict": "potential", "category": "РКО", "confidence": 86,
               "reason": "Личный вопрос", "reply": "Проверьте тарифы и расходы."}
@@ -81,7 +82,8 @@ class DeepSeekTests(unittest.TestCase):
     def test_search_only_does_not_call_model(self):
         item = {"title": "Подскажите, какой банк выбрать для ИП?",
                 "url": "https://example.org/search-only",
-                "summary": "Хочу открыть расчётный счёт для ИП"}
+                "summary": "Хочу открыть расчётный счёт для ИП",
+                "date": datetime.now(timezone.utc).isoformat()}
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key", "DEEPSEEK_ANALYZE": "0"}), \
              patch.object(ds, "_search", return_value=[item]), \
              patch.object(ds, "_analyze") as analyze, \
@@ -90,6 +92,26 @@ class DeepSeekTests(unittest.TestCase):
             self.assertFalse(analyze.called)
             self.assertEqual(ds.status()["analysis_used"], 0)
             self.assertFalse(ds.status()["ai_enabled"])
+
+
+    def test_ancient_and_unknown_dates_never_analyzed(self):
+        item = {
+            "title": "Подскажите какой банк выбрать для ИП?",
+            "url": "https://example.org/2022/11/old-topic",
+            "summary": "Хочу открыть расчётный счёт",
+            "date": "2022-11-01T00:00:00+00:00",
+        }
+        unknown = dict(item, url="https://example.org/undated-topic", date=None)
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-deepseek-key", "DEEPSEEK_ANALYZE": "1"}), \
+             patch.object(ds, "_search", return_value=[item, unknown]), \
+             patch.object(ds, "_analyze") as analyze, \
+             patch.object(ds, "new_opportunities"):
+            ds.run_once()
+        self.assertFalse(analyze.called)
+        with db.connect() as cx:
+            self.assertEqual(cx.execute("SELECT COUNT(*) FROM leads").fetchone()[0], 0)
+        self.assertEqual(ds.status()["stale"], 3)
+        self.assertEqual(ds.status()["undated"], 3)
 
     def test_budget_never_exceeds_max(self):
         for _ in range(ds.SEARCH_DAILY_LIMIT):
@@ -100,10 +122,10 @@ class DeepSeekTests(unittest.TestCase):
     def test_review_preserves_stage_and_notes(self):
         with db.connect() as cx:
             cur = cx.execute(
-                """INSERT INTO leads(title,description,url,category,score,created_at,stage,notes,origin)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                """INSERT INTO leads(title,description,url,category,score,created_at,stage,notes,origin,published_on)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 ("Подскажите какой банк для ИП?", "Ищу расчётный счёт", "https://example.org/lead",
-                 "РКО", 75, db.now(), "review", "Написать после проверки", "rss"),
+                 "РКО", 75, db.now(), "review", "Написать после проверки", "rss", datetime.now(timezone.utc).date().isoformat()),
             )
             lead_id = cur.lastrowid
         ai = {"verdict": "information", "category": "РКО", "confidence": 91,
