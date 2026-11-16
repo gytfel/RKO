@@ -1,6 +1,7 @@
 """Collect from *explicitly configured* public RSS/Atom feeds. No user profiling or outreach."""
 import ipaddress
 import logging
+import re
 import socket
 import threading
 import time
@@ -67,12 +68,29 @@ def fetch_feed(url):
 def clean_text(value, limit=1300):
     return BeautifulSoup(value or "", "html.parser").get_text(" ", strip=True)[:limit]
 
+POST_ANCHOR = re.compile(r"^(?:post|message|comment)[-_]?(?:\\d{1,18})$", re.I)
+POST_PATH = re.compile(r"/(?:posts|messages|comments)/\\d+(?:/|$)", re.I)
+
+def reply_permalink(link):
+    try:
+        parsed = urlparse(str(link or ""))
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            return False
+        return bool(POST_PATH.search(parsed.path) or POST_ANCHOR.fullmatch(parsed.fragment))
+    except ValueError:
+        return False
+
 def normalize_link(link):
-    parsed = urlparse(link)
-    if parsed.scheme not in ("https", "http") or not parsed.hostname:
+    try:
+        parsed = urlparse(str(link or ""))
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            return None
+        # Retain only actual post anchors. Old implementation stripped #post-123
+        # and conflated new replies with the original four-year-old thread.
+        base, fragment = urldefrag(str(link))
+        return (base + ("#" + fragment if POST_ANCHOR.fullmatch(fragment) else ""))[:2048]
+    except ValueError:
         return None
-    # preserve full URL, except fragments, to prevent duplicate entries by fragment
-    return urldefrag(link)[0][:2048]
 
 def run_once():
     if not LOCK.acquire(blocking=False):
@@ -92,6 +110,11 @@ def run_once():
                     raise FeedError("Ответ не похож на RSS/Atom")
                 for entry in feed.entries[:150]:
                     url = normalize_link(entry.get("link", ""))
+                    guid = normalize_link(entry.get("id", ""))
+                    # RSS GUID may point to a specific new message while link points
+                    # at an ancient thread. Use GUID only for the SAME host.
+                    if guid and url and reply_permalink(guid) and urlparse(guid).hostname == urlparse(url).hostname:
+                        url = guid
                     if not url:
                         continue
                     title = clean_text(entry.get("title", ""), 250) or "Без названия"
