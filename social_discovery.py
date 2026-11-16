@@ -25,7 +25,7 @@ TG_ENDPOINT = "https://api.tgstat.ru/posts/search"
 VK_ENDPOINT = "https://api.vk.com/method/wall.search"
 TG_DAILY_LIMIT = 18
 VK_DAILY_LIMIT = 30
-CHECK_INTERVAL_SECONDS = 60 * 60
+CHECK_INTERVAL_SECONDS = 90 * 60
 STATUS = {"running": False, "checked": 0, "added": 0, "received": 0,
           "filtered": 0, "duplicates": 0, "errors": []}
 LOCK = threading.Lock()
@@ -104,7 +104,7 @@ def status():
             "duplicates":STATUS["duplicates"] if STATUS["running"] else saved["duplicates"],
             "tg_used":_used("social_tg"), "tg_limit":TG_DAILY_LIMIT,
             "vk_used":_used("social_vk"), "vk_limit":VK_DAILY_LIMIT,
-            "errors":list(STATUS["errors"])[:3], "interval_hours":1}
+            "errors":list(STATUS["errors"])[:3], "interval_minutes":90}
 
 
 def _tg_search(query):
@@ -212,7 +212,7 @@ def run_once():
         with connect() as db:
             cursor=int(_setting(db,"social_cursor","0"))
         if tg_enabled():
-            for i in range(3):
+            for i in range(1):
                 if not _reserve("social_tg",TG_DAILY_LIMIT):
                     STATUS["errors"].append("TGStat: дневной лимит запросов.")
                     break
@@ -232,7 +232,7 @@ def run_once():
         if vk_enabled():
             walls=vk_communities()
             # Explicitly selected communities only, no global VK harvesting.
-            for i in range(min(3,len(walls))):
+            for i in range(min(1,len(walls))):
                 if not _reserve("social_vk",VK_DAILY_LIMIT):
                     STATUS["errors"].append("VK: дневной лимит запросов.")
                     break
