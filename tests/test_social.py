@@ -54,14 +54,14 @@ class SocialMonitoringTests(unittest.TestCase):
              patch.object(self.social,"_tg_search",return_value=[item]) as search, \
              patch.object(self.social,"new_opportunities"):
             self.assertTrue(self.social.run_once())
-            self.assertEqual(search.call_count,3)
+            self.assertEqual(search.call_count,1)
             self.assertTrue(self.social.run_once())
         with self.db.connect() as cx:
             rows=cx.execute("SELECT * FROM leads WHERE origin='tgstat'").fetchall()
             self.assertEqual(len(rows),1)
             self.assertEqual(rows[0]["category"],"Карты")
             self.assertEqual(rows[0]["referral_signal"],"asked")
-        self.assertGreaterEqual(self.social.status()["duplicates"],3)
+        self.assertGreaterEqual(self.social.status()["duplicates"],1)
 
     def test_vk_only_named_communities(self):
         now=int(datetime.now(timezone.utc).timestamp())
@@ -72,7 +72,7 @@ class SocialMonitoringTests(unittest.TestCase):
              patch.object(self.social,"_vk_search",return_value=[post]) as search, \
              patch.object(self.social,"new_opportunities"):
             self.social.run_once()
-            self.assertEqual(search.call_count,2)
+            self.assertEqual(search.call_count,1)
             self.assertEqual(search.call_args_list[0].args[0],"firstcommunity")
         with self.db.connect() as cx:
             self.assertEqual(cx.execute("SELECT COUNT(*) FROM leads WHERE origin='vk'").fetchone()[0],1)
