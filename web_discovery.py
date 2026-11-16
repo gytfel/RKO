@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 from db import connect, get_setting, now
 from notifications import new_opportunities
 from scoring import score_text
+from freshness import normalize_published_date, date_status, old_year_in_url, window_bounds
 from search_catalog import tavily_plan, PUBLIC_SITE_NAMES
 
 log = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ QUERIES_PER_RUN = 5
 DAILY_LIMIT = 24     # 24/day, <= 744 basic queries in a 31-day month.
 RUN_EVERY_SECONDS = 6 * 3600
 LOCK = threading.Lock()
-STATUS = {"running": False, "added": 0, "checked": 0, "received": 0, "filtered": 0, "duplicates": 0, "errors": [], "last_run": None}
+STATUS = {"running": False, "added": 0, "checked": 0, "received": 0, "filtered": 0, "duplicates": 0, "stale": 0, "undated": 0, "errors": [], "last_run": None}
 
 
 def configured():
@@ -71,6 +72,8 @@ def status():
         returned = int(_setting(db, "web_last_received", "0"))
         excluded = int(_setting(db, "web_last_filtered", "0"))
         duplicates = int(_setting(db, "web_last_duplicates", "0"))
+        stale = int(_setting(db, "web_last_stale", "0"))
+        undated = int(_setting(db, "web_last_undated", "0"))
     return {
         "configured": configured(), "running": STATUS["running"],
         "last_run": last or None, "added": STATUS["added"] if STATUS["running"] else added,
@@ -79,6 +82,9 @@ def status():
         "received": STATUS["received"] if STATUS["running"] else returned,
         "filtered": STATUS["filtered"] if STATUS["running"] else excluded,
         "duplicates": STATUS["duplicates"] if STATUS["running"] else duplicates,
+        "stale": STATUS["stale"] if STATUS["running"] else stale,
+        "undated": STATUS["undated"] if STATUS["running"] else undated,
+        "fresh_days": 7,
         "queries_per_run": QUERIES_PER_RUN, "interval_hours": 6,
         "site_names": list(PUBLIC_SITE_NAMES), "card_search_enabled": True,
     }
@@ -115,7 +121,9 @@ def _search(query, key):
         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
         json={
             "query": query, "search_depth": "basic", "topic": "general",
-            "max_results": 10, "time_range": "month",
+            "max_results": 10, "time_range": "week",
+            "start_date": window_bounds()[0], "include_published_date": True,
+            "filter_by_published_date": True,
             "include_answer": False, "include_raw_content": False, "include_images": False,
         },
         timeout=(5, 18),
@@ -136,7 +144,7 @@ def run_once():
         return False
     # Local import prevents a circular dependency: DeepSeek reuses URL filters here.
     from deepseek_discovery import ai_enabled as ai_configured, analyze_lead
-    STATUS.update(running=True, added=0, checked=0, received=0, filtered=0, duplicates=0, errors=[])
+    STATUS.update(running=True, added=0, checked=0, received=0, filtered=0, duplicates=0, stale=0, undated=0, errors=[])
     found = []
     candidates = []
     try:
@@ -160,6 +168,13 @@ def run_once():
                     if not title:
                         STATUS["filtered"] += 1
                         continue
+                    publication_raw = str(result.get("published_date") or "")[:120]
+                    publication = normalize_published_date(publication_raw)
+                    freshness = date_status(publication_raw)
+                    if freshness != "fresh" or old_year_in_url(url):
+                        STATUS["filtered"] += 1
+                        STATUS["stale" if freshness == "stale" or old_year_in_url(url) else "undated"] += 1
+                        continue
                     cls = score_text(title, description)
                     if cls["intent_label"] == "information" or cls["category"] == "Другое":
                         STATUS["filtered"] += 1
@@ -169,10 +184,10 @@ def run_once():
                         new = db.execute(
                             """INSERT OR IGNORE INTO leads
                                (source_id,title,description,url,category,score,reason,created_at,
-                                published_at,intent_label,intent_summary,scored_version,origin,referral_signal)
-                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,7,'web',?)""",
+                                published_at,published_on,intent_label,intent_summary,scored_version,origin,referral_signal)
+                               VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,7,'web',?)""",
                             (title, description, url, cls["category"], cls["score"],
-                             cls["reason"], now(), str(result.get("published_date") or "")[:120],
+                             cls["reason"], now(), publication_raw, publication,
                              cls["intent_label"], cls["intent_summary"], cls["referral_signal"]),
                         )
                         if new.rowcount:
@@ -195,6 +210,8 @@ def run_once():
             _put(db, "web_last_received", STATUS["received"])
             _put(db, "web_last_filtered", STATUS["filtered"])
             _put(db, "web_last_duplicates", STATUS["duplicates"])
+            _put(db, "web_last_stale", STATUS["stale"])
+            _put(db, "web_last_undated", STATUS["undated"])
         for lead_id in candidates:
             verdict = analyze_lead(lead_id)
             if verdict and verdict["verdict"] == "potential":
