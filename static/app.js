@@ -38,7 +38,7 @@ async function show(view){
       :'Все записи, включая статьи и новости.';
     await loadLeads();
   }
-  if(view==='sources')await Promise.all([loadSources(),loadWebStatus(),loadDeepSeekStatus(),loadSocialStatus()]);
+  if(view==='sources')await Promise.all([loadSources(),loadWebStatus(),loadDeepSeekStatus(),loadSocialStatus(),loadExtraStatus()]);
   if(view==='settings')await loadSettings();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -83,6 +83,44 @@ $('web-search-btn').addEventListener('click',async()=>{
 });
 
 
+
+
+async function loadExtraStatus(){
+  const s=await api('/api/extra/status');
+  $('extra-state').textContent=s.running?'⏳ Поиск выполняется':s.configured?'✓ Доступные API подключены':'Нужны отдельные ключи';
+  $('extra-results').textContent=String(s.results);
+  for(const [name,id,flag] of [
+    ['yandex','extra-yandex','yandex_configured'],
+    ['brave','extra-brave','brave_configured'],
+    ['telemetr','extra-telemetr','telemetr_configured']
+  ]) $(''+id).textContent=s[flag]?(s.used[name]+' / '+s.limits[name]):'Не подключён';
+  $('extra-diagnostics').textContent=s.last_run?
+    'Получено '+s.received+' · добавлено '+s.added+' · отфильтровано '+s.filtered+
+    ' (старые '+s.stale+', дата не подтверждена '+s.undated+') · дубли '+s.duplicates:
+    'Дополнительные API пока не запускались. Подключай только нужные.';
+  if(s.errors?.length)$('extra-diagnostics').textContent+=' · Ошибка: '+s.errors[0];
+  $('extra-btn').disabled=!s.configured||s.running;
+  return s;
+}
+$('extra-btn').addEventListener('click',async()=>{
+  const b=$('extra-btn'); b.disabled=true;
+  try{
+    const before=await loadExtraStatus();
+    const result=await api('/api/extra/run',{method:'POST',body:{}});
+    toast(result.message);
+    let tries=0;
+    const interval=setInterval(async()=>{
+      try{
+        const s=await loadExtraStatus();
+        if((s.last_run&&s.last_run!==before.last_run)||++tries>=30){
+          clearInterval(interval);
+          toast(s.errors?.length?s.errors[0]:'Добавлено: '+s.added,!!s.errors?.length);
+          if(state.view==='sources')await loadSources();
+        }
+      }catch(e){clearInterval(interval);b.disabled=false;toast(e.message,true);}
+    },3000);
+  }catch(e){b.disabled=false;toast(e.message,true);}
+});
 
 async function loadSocialStatus(){
   const s=await api('/api/social/status');
