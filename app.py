@@ -19,6 +19,8 @@ from notifications import configured as notifications_configured, send_message
 from web_discovery import configured as web_configured, status as web_status, start_refresh as web_start_refresh, start_worker as web_start_worker
 from social_discovery import (configured as social_configured, status as social_status,
                               start_refresh as social_start_refresh, start_worker as social_start_worker)
+from extra_discovery import (configured as extra_configured, status as extra_status,
+                             start_refresh as extra_start_refresh, start_worker as extra_start_worker)
 from deepseek_discovery import (
     configured as deepseek_configured, status as deepseek_status,
     start_refresh as deepseek_start_refresh, start_worker as deepseek_start_worker,
@@ -46,6 +48,7 @@ if os.getenv("DISABLE_SCHEDULER", "0") != "1":
     web_start_worker()
     deepseek_start_worker()
     social_start_worker()
+    extra_start_worker()
 
 @app.after_request
 def security_headers(response):
@@ -191,7 +194,7 @@ def leads():
         limit = 30
     with connect() as db:
         count = db.execute(f"SELECT COUNT(*) FROM leads l WHERE {where}", params).fetchone()[0]
-        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='deepseek' THEN 'Поиск в интернете · DeepSeek' WHEN l.origin='tgstat' THEN 'Telegram · TGStat' WHEN l.origin='vk' THEN 'VK · публичное сообщество' WHEN l.origin='tgstat' THEN 'Telegram · TGStat' WHEN l.origin='vk' THEN 'VK · публичное сообщество' WHEN l.origin='manual' THEN 'Добавлено вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name
+        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='deepseek' THEN 'Поиск в интернете · DeepSeek' WHEN l.origin='yandex' THEN 'Поиск · Yandex' WHEN l.origin='brave' THEN 'Поиск · Brave' WHEN l.origin='telemetr' THEN 'Telegram · Telemetr' WHEN l.origin='tgstat' THEN 'Telegram · TGStat' WHEN l.origin='vk' THEN 'VK · публичное сообщество' WHEN l.origin='tgstat' THEN 'Telegram · TGStat' WHEN l.origin='vk' THEN 'VK · публичное сообщество' WHEN l.origin='manual' THEN 'Добавлено вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name
             FROM leads l LEFT JOIN sources s ON s.id=l.source_id
             WHERE {where} ORDER BY CASE WHEN l.stage='new' THEN 0 ELSE 1 END, l.score DESC, l.created_at DESC
             LIMIT ? OFFSET ?""", params + [limit, (page - 1) * limit]).fetchall()
@@ -397,12 +400,28 @@ def social_discovery_run():
     return jsonify(ok=True, message="Начат поиск по публичным VK/Telegram источникам"), 202
 
 
+@app.route("/api/extra/status")
+@admin_only
+def extra_sources_status():
+    return jsonify(extra_status())
+
+
+@app.route("/api/extra/run", methods=["POST"])
+@admin_only
+def extra_sources_run():
+    if not extra_configured():
+        return error("Новые поисковые API не настроены. На VPS: sudo rko-radar extra setup", 400)
+    if not extra_start_refresh():
+        return error("Поиск уже выполняется или источники не подключены", 409)
+    return jsonify(ok=True,message="Запущен поиск Yandex / Brave / Telemetr"), 202
+
+
 @app.route("/api/export")
 @admin_only
 def export_csv():
     where, params = lead_query_args()
     with connect() as db:
-        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='deepseek' THEN 'Поиск в интернете · DeepSeek' WHEN l.origin='manual' THEN 'Вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name FROM leads l
+        rows = db.execute(f"""SELECT l.*, CASE WHEN l.origin='web' THEN 'Поиск в интернете · Tavily' WHEN l.origin='deepseek' THEN 'Поиск в интернете · DeepSeek' WHEN l.origin='yandex' THEN 'Поиск · Yandex' WHEN l.origin='brave' THEN 'Поиск · Brave' WHEN l.origin='telemetr' THEN 'Telegram · Telemetr' WHEN l.origin='manual' THEN 'Вручную' ELSE COALESCE(s.name,'RSS-лента') END AS source_name FROM leads l
             LEFT JOIN sources s ON s.id=l.source_id WHERE {where} ORDER BY l.score DESC LIMIT 20000""", params).fetchall()
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
