@@ -114,6 +114,21 @@ class ApiTests(unittest.TestCase):
             signal = self.client.get('/api/leads?signals_only=1&category=Карты&min_score=0').get_json()['items']
             self.assertFalse(any(x['url'] == item['url'] for x in signal))
 
+    def test_optional_extra_providers_are_protected(self):
+        self.assertEqual(self.client.get('/api/extra/status').status_code, 401)
+        token = self.auth()
+        status = self.client.get('/api/extra/status')
+        self.assertEqual(status.status_code, 200)
+        self.assertIn('yandex_configured', status.get_json())
+        self.assertIn('telemetr_configured', status.get_json())
+        self.assertEqual(self.client.post('/api/extra/run', json={}).status_code, 403)
+        with __import__('unittest').mock.patch.dict(os.environ, {
+            'YANDEX_SEARCH_API_KEY':'', 'YANDEX_SEARCH_FOLDER_ID':'',
+            'BRAVE_SEARCH_API_KEY':'', 'TELEMETR_API_KEY':''}):
+            rejected = self.client.post('/api/extra/run', json={},
+                                        headers={'X-CSRF-Token':token})
+            self.assertEqual(rejected.status_code, 400)
+
     def test_prohibited_internal_source(self):
         token = self.auth()
         r = self.client.post('/api/sources', json={'name':'Localhost', 'url':'https://127.0.0.1/'}, headers={'X-CSRF-Token':token})
