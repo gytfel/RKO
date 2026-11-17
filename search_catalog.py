@@ -71,6 +71,11 @@ REFERRAL_QUERIES = (
     'site:banki.ru/dialog/ ищу реферальную ссылку',
 )
 
+# Always include at least one targeted question-board query per Tavily run.
+# These are subsets of the topic queries, not extra paid search calls.
+RKO_QUESTION_SITES = tuple(q for q in RKO_QUERIES if q.startswith(("site:bankiros.ru", "site:banki.ru")))
+CARD_QUESTION_SITES = tuple(q for q in CARD_QUERIES if q.startswith(("site:bankiros.ru", "site:banki.ru")))
+
 
 def tavily_plan(cursor=0):
     """5 calls: 2 RKO, 2 debit cards, 1 explicit referral question."""
@@ -79,8 +84,8 @@ def tavily_plan(cursor=0):
         RKO_QUERIES[c % len(RKO_QUERIES)],
         CARD_QUERIES[c % len(CARD_QUERIES)],
         REFERRAL_QUERIES[c % len(REFERRAL_QUERIES)],
-        CARD_QUERIES[(c + 1) % len(CARD_QUERIES)],
-        RKO_QUERIES[(c + 1) % len(RKO_QUERIES)],
+        CARD_QUESTION_SITES[c % len(CARD_QUESTION_SITES)],
+        RKO_QUESTION_SITES[c % len(RKO_QUESTION_SITES)],
     ]
 
 
