@@ -19,6 +19,11 @@ RKO_QUERIES = (
     'site:hranidengi.com/threads/ открытие расчетного счета ответ',
     'site:banki.ru/dialog/ расчетный счет вопрос ИП',
     'site:otvet.mail.ru открыть расчетный счет для ИП',
+    'site:bankiros.ru/questions/ расчетный счет открыть ИП',
+    'site:bankiros.ru/questions "банк для ИП" открыть',
+    'site:banki.ru/services/questions-answers/question/ открыть расчетный счет',
+    'site:banki.ru/dialog/ "посоветуйте РКО"',
+    'site:banki.ru/services/questions-answers/ банк для бизнеса',
 )
 CARD_QUERIES = (
     'посоветуйте дебетовую карту для покупок',
@@ -40,6 +45,10 @@ CARD_QUERIES = (
     'site:hranidengi.com/threads/ дебетовая карта посоветуйте',
     'site:banki.ru/dialog/ какую карту открыть',
     'site:qna.habr.com дебетовая карта выбрать банк',
+    'site:bankiros.ru/questions/ "дебетовую карту" выбрать',
+    'site:bankiros.ru/questions дебетовые карты посоветуйте',
+    'site:banki.ru/services/questions-answers/question/ "оформить дебетовую карту"',
+    'site:banki.ru/dialog/ "какую дебетовую карту выбрать"',
 )
 REFERRAL_QUERIES = (
     'ищу реферальную ссылку дебетовая карта',
@@ -57,6 +66,9 @@ REFERRAL_QUERIES = (
     'кто поделится приглашением на альфа карту',
     'нужна рефералка дебетовая карта пост',
     'site:hranidengi.com/threads/ нужна реферальная ссылка',
+    'site:bankiros.ru/questions приглашение банковская карта',
+    'site:banki.ru/services/questions-answers/question/ реферальная ссылка',
+    'site:banki.ru/dialog/ ищу реферальную ссылку',
 )
 
 
@@ -82,4 +94,4 @@ def deepseek_plan(cursor=0):
     ]
 
 
-PUBLIC_SITE_NAMES = ("Храни Деньги", "Банки.ру", "VC.ru", "Пикабу", "Хабр Q&A", "Ответы Mail.ru")
+PUBLIC_SITE_NAMES = ("Храни Деньги", "Банки.ру", "Bankiros.ru", "VC.ru", "Пикабу", "Хабр Q&A", "Ответы Mail.ru")
