@@ -138,6 +138,24 @@ PY
       *) echo 'Команды: rko-radar context enable | disable | status' ;;
     esac
     ;;
+  extra)
+    case "${2:-status}" in
+      setup)
+        python3 "$APP_DIR/extra_setup.py"
+        systemctl restart "$SERVICE"
+        echo '✓ Дополнительные API сохранены. Проверь статус в панели «Источники».'
+        ;;
+      status)
+        [[ -s /etc/rko-radar-extra.env ]] && echo 'Дополнительные поисковые API настроены (ключи скрыты).' || echo 'Ключи не настроены: sudo rko-radar extra setup'
+        ;;
+      disable)
+        rm -f /etc/rko-radar-extra.env
+        systemctl restart "$SERVICE"
+        echo '✓ Yandex, Brave и Telemetr отключены; найденные записи сохранены.'
+        ;;
+      *) echo 'Команды: rko-radar extra setup | status | disable' ;;
+    esac
+    ;;
   upgrade)
     updater="$APP_DIR/../rko-radar-source/scripts/update-vps.sh"
     # Fetch latest updater before pulling app code (first run included).
@@ -182,6 +200,7 @@ RKO Radar — команды управления на VPS:
   rko-radar deepseek setup / status / disable — поиск и анализ DeepSeek
   rko-radar social setup / status / disable — поиск Telegram TGStat и VK сообществ
   rko-radar context enable / disable / status — платный расширенный контекст (по умолчанию выключен)
+  rko-radar extra setup / status / disable — Yandex Search, Brave Search, Telemetr API
   rko-radar upgrade   — обновить с GitHub (без загрузки файлов вручную)
   rko-radar update /путь/к/файлу.sh — установить обновление
 TXT
